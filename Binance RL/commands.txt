@@ -1,0 +1,3 @@
+D Drive jupyterlab start:
+
+jupyter lab --notebook-dir=D:
