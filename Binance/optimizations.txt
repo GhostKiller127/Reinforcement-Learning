@@ -1,0 +1,12 @@
+optimizations:
+- correct position encoding
+- add option to continue training
+- check first day of history for anomaly
+- lin vs asinh label preprocessing
+- different number of labels
+- add deviation prediction to estimate accuracy
+- different thresholds for sell and buy
+- different rewards for profit and loss
+- maybe add prediction evaluation (prediction mean & std) -> easier to find thresholds
+- maybe add percentage threshold for better comparison
+- check prediction distribution for max threshold for real data
