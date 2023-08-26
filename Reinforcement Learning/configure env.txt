@@ -1,0 +1,41 @@
+gcloud compute ssh --zone="us-west1-b" jupyter@"my-fastai-instance" -- -L 8080:localhost:8080
+gcloud compute ssh --zone="us-central1-a" jupyter@"openai-gym" -- -L 8080:localhost:8080
+
+sudo /opt/anaconda3/bin/conda install -c conda-forge jupyterthemes
+sudo /opt/anaconda3/bin/conda install -c conda-forge jupyter_contrib_nbextensions
+sudo /opt/anaconda3/bin/conda install -c conda-forge autopep8
+
+
+jt -t monokai -fs 11 -nfs 12 -tfs 11 -cellw 82% -kl -N -T
+
+
+xvfb-run -a -s "-screen 0 1400x900x24" gcloud compute ssh --zone="us-central1-a" jupyter@"openai-gym" -- -L 8080:localhost:8080
+
+xvfb-run -a -s "-screen 0 600x400x24" jupyter-notebook Render-matplotlib.ipynb
+
+xvfb-run -a -s "-screen 0 600x400x24" python RenderToMP4.py
+
+xvfb-run -a -s "-screen 0 1400x900x24" jupyter notebook
+
+
+
+https://towardsdatascience.com/how-to-install-openai-gym-in-a-windows-environment-338969e24d30
+pip install gym[all]
+pip install gym
+gym-0.12.5\gym\envs\classic_control\rendering.py
+conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
+conda install -c conda-forge matplotlib
+conda install -c conda-forge pyglet
+
+pip install gymnasium
+conda install swig
+pip install "gymnasium[box2d]"
+pip install pyglet==1.2.4
+
+conda activate openai_gym
+jupyter notebook
+
+conda env openai_gym > environment.yml
+
+C:\Users\ghost\AppData\Local\Packages\CanonicalGroupLimited.UbuntuonWindows_79rhkp1fndgsc\LocalState\rootfs\home\ghost
+
