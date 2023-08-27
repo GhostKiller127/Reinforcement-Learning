@@ -1,2 +1,0 @@
-conda create --name gymnasium_py3.11 python=3.11
-conda activate gymnasium_py3.11

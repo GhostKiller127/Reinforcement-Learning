@@ -1,17 +1,29 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
+
 import sys, math
 import numpy as np
+import matplotlib.pyplot as plt
 
 import Box2D
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
 
-import gymnasium as gym
-from gymnasium import spaces
-from gymnasium.utils import seeding, EzPickle
+import gym
+from gym import spaces
+from gym.utils import seeding, EzPickle
 
 import pyglet
 from pyglet import gl
+from pyglet.window import key
 
-FPS = 50
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+RECORDING = True
+# RECORDING = False
+
+FPS = 60
 SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well (Don't touch)
 
 VIEWPORT_W = 600
@@ -26,6 +38,11 @@ RACKETPOLY = [(-5,20),(+5,20),(+5,-20),(-5,-20),(-13,-10),(-15,0),(-13,10)]
 FORCEMULIPLAYER = 5000
 TORQUEMULTIPLAYER = 200
 
+scaling = [ 1.0,  1.0 , 3.14, 4.0, 4.0, 2.0,  
+            1.0,  1.0,  3.14, 4.0, 4.0, 2.0,  
+            2.0, 2.0, 10.0, 10.0]
+
+
 def dist_positions(p1,p2):
     return np.sqrt(np.sum(np.asarray(p1-p2)**2))
 
@@ -37,12 +54,12 @@ class ContactDetector(contactListener):
     def BeginContact(self, contact):
         if self.env.goal_player_2 == contact.fixtureA.body or self.env.goal_player_2 == contact.fixtureB.body:
             if self.env.puck == contact.fixtureA.body or self.env.puck == contact.fixtureB.body:
-                print('Player 1 scored')
+                # print('Player 1 scored')
                 self.env.done = True
                 self.env.winner = 1
         if self.env.goal_player_1 == contact.fixtureA.body or self.env.goal_player_1 == contact.fixtureB.body:
             if self.env.puck == contact.fixtureA.body or self.env.puck == contact.fixtureB.body:
-                print('Player 2 scored')
+                # print('Player 2 scored')
                 self.env.done = True
                 self.env.winner = -1
         if (contact.fixtureA.body == self.env.player1 or contact.fixtureB.body == self.env.player1) \
@@ -89,7 +106,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 500
+        self.max_timesteps = 10000
 
         self.closest_to_goal_dist = 1000
 
@@ -119,6 +136,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.reset(self.one_starts)
 
+    def key_press(self, symbol, mod):
+        if symbol == key.ESCAPE: self.done = True    
+        
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         self._seed = seed
@@ -417,7 +437,35 @@ class LaserHockeyEnv(gym.Env, EzPickle):
                 player.ApplyForceToCenter(force.tolist(), True)
             else:
                 pass
-
+            
+    
+    def obs_norm(self, obs):
+        obs_norm = np.copy(obs)
+        obs_norm[0] /= 7.5
+        obs_norm[1] /= 5
+        obs_norm[2] = (obs_norm[2] % (2*np.pi))
+        if obs_norm[2] > np.pi:
+            obs_norm[2] = obs_norm[2] - 2*np.pi
+        obs_norm[2] /= np.pi
+        obs_norm[3] /= 10
+        obs_norm[4] /= 10
+        obs_norm[5] /= 15
+        obs_norm[6] /= 7.5
+        obs_norm[7] /= 5
+        obs_norm[8] = (obs_norm[8] % (2*np.pi))
+        if obs_norm[8] > np.pi:
+            obs_norm[8] = obs_norm[8] - 2*np.pi
+        obs_norm[8] /= np.pi
+        obs_norm[9] /= 10
+        obs_norm[10] /= 10
+        obs_norm[11] /= 15
+        obs_norm[12] /= 7.5
+        obs_norm[13] /= 5
+        obs_norm[14] /= 20
+        obs_norm[15] /= 20
+        return obs_norm         
+            
+            
     def _get_obs(self):
         obs = np.hstack([
             self.player1.position-[CENTER_X,CENTER_Y],
@@ -432,25 +480,25 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             self.puck.linearVelocity
             ])
 
-        return obs
+        return self.obs_norm(obs)
 
     def obs_agent_two(self):
         ''' returns the observations for agent two (symmetric mirrored version of agent one)
         '''
         obs = np.hstack([
             -(self.player2.position-[CENTER_X,CENTER_Y]),
-            [-self.player2.angle],
+            [self.player2.angle],
             -self.player2.linearVelocity,
-            [-self.player2.angularVelocity],
+            [self.player2.angularVelocity],
             -(self.player1.position-[CENTER_X,CENTER_Y]),
-            [-self.player1.angle],
+            [self.player1.angle],
             -self.player1.linearVelocity,
-            [-self.player1.angularVelocity],
+            [self.player1.angularVelocity],
             -(self.puck.position-[CENTER_X,CENTER_Y]),
             -self.puck.linearVelocity
             ])
 
-        return obs
+        return self.obs_norm(obs)
 
 
     def _compute_reward(self):
@@ -502,24 +550,6 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         else:
             self.puck.linearDamping = 0.05
 
-    def discrete_to_continous_action(self, discrete_action):
-        ''' converts discrete actions into continuous ones (for each player)
-        The actions allow only one operation each timestep, e.g. X or Y or angle change.
-        This is surely limiting. Other discrete actions are possible
-        Action 0: do nothing
-        Action 1: -1 in x
-        Action 2: 1 in x
-        Action 3: -1 in y
-        Action 4: 1 in y
-        Action 5: -1 in angle
-        Action 6: 1 in angle
-        '''
-        action_cont = [(discrete_action==1) * -1 + (discrete_action==2) * 1, # player x
-                       (discrete_action==3) * -1 + (discrete_action==4) * 1, # player y
-                       (discrete_action==5) * -1 + (discrete_action==6) * 1] # player angle
-
-        return action_cont
-
 
     def step(self, action):
         action = np.clip(action, -1, +1).astype(np.float32)
@@ -527,7 +557,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self._apply_action_with_max_speed(self.player1, action[:2], 10, True)
         self.player1.ApplyTorque(action[2] * TORQUEMULTIPLAYER, True)
         self._apply_action_with_max_speed(self.player2, action[3:5], 10, False)
-        self.player2.ApplyTorque(-action[5] * TORQUEMULTIPLAYER, True)
+        self.player2.ApplyTorque(action[5] * TORQUEMULTIPLAYER, True)
 
         self._limit_puck_speed()
         self.player1_contact_puck = False
@@ -547,7 +577,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         return obs, reward, self.done, info
 
     def render(self, mode='human'):
-        from gymnasium.envs.classic_control import rendering
+        from gym.envs.classic_control import rendering
         if self.viewer is None:
             self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
             self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
@@ -585,8 +615,40 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 class BasicOpponent():
     def __init__(self):
         self.mode = 0
-
-    def act(self, obs, verbose=False):
+     
+    def obs_unnorm(self, obs):
+        obs_unnorm = np.copy(obs)
+        obs_unnorm[0] *= 7.5
+        obs_unnorm[1] *= 5
+        obs_unnorm[2] *= np.pi
+        obs_unnorm[3] *= 10
+        obs_unnorm[4] *= 10
+        obs_unnorm[5] *= 15
+        obs_unnorm[6] *= 7.5
+        obs_unnorm[7] *= 5
+        obs_unnorm[8] *= np.pi
+        obs_unnorm[9] *= 10
+        obs_unnorm[10] *= 10
+        obs_unnorm[11] *= 15
+        obs_unnorm[12] *= 7.5
+        obs_unnorm[13] *= 5
+        obs_unnorm[14] *= 20
+        obs_unnorm[15] *= 20
+        return obs_unnorm         
+                
+    def act(self, obs, verbose=False, descrete=True, rnd=False):
+        if len(obs) != 16:
+            actions = []
+            for o in obs:
+                actions.append(self.act(o, verbose, descrete, rnd))
+            return actions
+        if rnd == True:
+            action = np.random.uniform(-1, 1, 3)
+            action = np.where(action >= 0.25, 1, action)
+            action = np.where(action <= -0.25, -1, action)
+            action = np.where(np.logical_and(action > -0.25, action < 0.25), 0, action)
+            return action
+        obs = self.obs_unnorm(obs)
         p1 = np.asarray(obs[0:3])
         v1 = np.asarray(obs[3:6])
         p2 = np.asarray(obs[6:9])
@@ -625,56 +687,291 @@ class BasicOpponent():
         if verbose:
             print(error, abs(error / (v1+0.01)), need_break)
 
-        return error*[kp,kp,kp/2] - v1*need_break*[kd,kd,kd]
+        action = error*[kp,kp,kp/2] - v1*need_break*[kd,kd,kd]
+        action = np.array(action)
+        action = np.where(action >= 1, 1, action)
+        action = np.where(action <= -1, -1, action)
+        if descrete == True:
+            action = np.where(action >= 0.5, 1, action)
+            action = np.where(action <= -0.5, -1, action)
+            action = np.where(np.logical_and(-0.5 < action, action < 0.5), 0, action)
+        return action
+
+
 
 class HumanOpponent():
     def __init__(self, env, player=1):
         self.env = env
         self.player = player
-        self.a = 0
+        self.a_left = 0
+        self.a_right = 0
+        self.a_up = 0
+        self.a_down = 0
+        self.a_clockwise = 0
+        self.a_anticlockwise = 0
 
         if env.viewer is None:
             env.render()
+            
+        
+    def key_press(self, symbol, mod):
+        if self.player == 1:
+            if symbol == key.A: self.a_left = 1
+            if symbol == key.D: self.a_right = 1
+            if symbol == key.W: self.a_up = 1
+            if symbol == key.S: self.a_down = 1
+            if symbol == key.H: self.a_clockwise = 1
+            if symbol == key.G: self.a_anticlockwise = 1
+        
+        if self.player == 2:
+            if symbol == key.LEFT: self.a_right = 1
+            if symbol == key.RIGHT: self.a_left = 1
+            if symbol == key.UP: self.a_down = 1
+            if symbol == key.DOWN: self.a_up = 1
+            if symbol == key.O: self.a_clockwise = 1
+            if symbol == key.P: self.a_anticlockwise = 1
+    
+    
+    def key_release(self, symbol, mod):
+        if self.player == 1:
+            if symbol == key.A: self.a_left = 0
+            if symbol == key.D: self.a_right = 0
+            if symbol == key.W: self.a_up = 0
+            if symbol == key.S: self.a_down = 0
+            if symbol == key.H: self.a_clockwise = 0
+            if symbol == key.G: self.a_anticlockwise = 0
 
-        self.env.viewer.window.on_key_press = self.key_press
-        self.env.viewer.window.on_key_release = self.key_release
+        if self.player == 2:
+            if symbol == key.LEFT: self.a_right = 0
+            if symbol == key.RIGHT: self.a_left = 0
+            if symbol == key.UP: self.a_down = 0
+            if symbol == key.DOWN: self.a_up = 0
+            if symbol == key.O: self.a_clockwise = 0
+            if symbol == key.P: self.a_anticlockwise = 0
 
-        self.key_action_mapping = {
-            65361:1 if self.player == 1 else 2, # Left arrow key
-            65362:4 if self.player == 1 else 3, # Up arrow key
-            65363:2 if self.player == 1 else 1, # Right arrow key
-            65364:3 if self.player == 1 else 4, # Down arrow key
-            100:5 if self.player == 1 else 6, # d
-            97:6 if self.player == 1 else 5, # a
-
-        }
-
-        print('Human Controls:')
-        print(' left:\t\t\tleft arrow key left')
-        print(' right:\t\t\tarrow key right')
-        print(' up:\t\t\tarrow key up')
-        print(' down:\t\t\tarrow key down')
-        print(' tilt clockwise:\td')
-        print(' tilt anti-clockwise:\ta')
-
-    def key_press(self, key, mod):
-        if key in self.key_action_mapping:
-            self.a = self.key_action_mapping[key]
-
-    def key_release(self, key, mod):
-        if key in self.key_action_mapping:
-            a = self.key_action_mapping[key]
-            if self.a == a:
-                self.a = 0
-
+    
     def act(self, obs):
-        return self.env.discrete_to_continous_action(self.a)
+        return [self.a_left * -1 + self.a_right * 1, # player x
+                self.a_down * -1 + self.a_up * 1, # player y
+                self.a_clockwise * -1 + self.a_anticlockwise * 1] # player angle
 
+    
+from gym.envs.registration import register
 
-# from gymnasium.envs.registration import register
-
-# register(
-    # id='LaserHockey-v0',
+register(
+    id='LaserHockey-v0',
     entry_point='laser_hockey_env.laser_hockey_env:LaserHockeyEnv',
-    # entry_point='laser_hockey_env:LaserHockeyEnv',
-# )
+)
+
+
+
+
+
+
+class Data():
+    def __init__(self):
+        self.obs_temp = []
+        self.a_temp = []
+        self.obs_all = []
+        self.a_all = []
+        self.r_all = []
+        self.a_all_index = []
+        self.a_all_onehot = []
+
+    
+    def delete_temp(self):
+        self.obs_temp = []
+        self.a_temp = []
+        
+        
+    def obs_all_np(self):
+        return np.array(self.obs_all)
+    
+    
+    def a_all_np(self):
+        return np.array(self.a_all)
+    
+    
+    def a_all_np_descrete(self):
+        a_all = []
+        for action in self.a_all:
+            action = np.where(action >= 0.5, 1, action)
+            action = np.where(action <= -0.5, -1, action)
+            action = np.where(np.logical_and(action > -0.5, action < 0.5), 0, action)
+            a_all.append(action)
+        return np.array(a_all)
+    
+    
+    def a_all_index_np(self):
+        if type(self.a_all_index).__module__ == np.__name__:
+            return self.a_all_index
+        if self.a_all_index:
+            return np.array(self.a_all_index)
+        else:
+            for action in self.a_all:
+                action = np.where(action >= 0.5, 1, action)
+                action = np.where(action <= -0.5, -1, action)
+                action = np.where(np.logical_and(action > -0.5, action < 0.5), 0, action)
+                action[0] += 1
+                action[1] += 4
+                action[2] += 7
+                action = action.astype(int)
+                self.a_all_index.append(action)
+            return np.array(self.a_all_index)
+    
+    
+    def a_all_onehot_np(self):
+        if type(self.a_all_index).__module__ == np.__name__:
+            return self.a_all_onehot
+        if self.a_all_onehot:
+            return np.array(self.a_all_onehot)
+        else:
+            for action in self.a_all:
+                action = np.where(action >= 0.5, 1, action)
+                action = np.where(action <= -0.5, -1, action)
+                action = np.where(np.logical_and(action > -0.5, action < 0.5), 0, action)
+                action += 1
+                action = action.astype(int)
+                onehot = np.array([0,0,0,0,0,0,0,0,0])
+                onehot[action[0]] = 1
+                onehot[action[1]+3] = 1
+                onehot[action[2]+6] = 1
+                self.a_all_onehot.append(onehot)
+            return np.array(self.a_all_onehot)
+    
+    
+    def r_all_np(self):
+        return np.array(self.r_all)
+    
+    
+    def r_calculate(self, N, win=None):
+        rewards = []
+        if win == None:
+            rewards = [[0.5]] * N
+        elif win:
+            for _ in range(N):
+                rewards.append([0.5+0.5*0.99**(N-(_+1))])
+        elif not win:
+            for _ in range(N):
+                rewards.append([0.5-0.5*0.99**(N-(_+1))])
+        return rewards
+
+    
+    
+       
+class QNetwork(nn.Module):
+    def __init__(self, device):
+        super(QNetwork, self).__init__()
+        self.h_N = 256
+        self.sigmoid = nn.Sigmoid()
+        self.linear_in = nn.Linear(16, self.h_N).to(device)
+        self.linear_h = nn.Linear(self.h_N, self.h_N).to(device)
+        self.linear_out_x = nn.Linear(self.h_N, 3).to(device)
+        self.linear_out_y = nn.Linear(self.h_N, 3).to(device)
+        self.linear_out_a = nn.Linear(self.h_N, 3).to(device)
+
+    def forward(self, s, device=device, stochastic=False, imitation=False, rl=False, action=None, inside=False, rnd=0):
+        if type(s).__module__ != 'torch':
+            s = torch.tensor(np.array(s, dtype=np.float64), dtype=torch.float, device=device)
+        if type(action).__module__ != 'torch':
+            action = torch.tensor(np.array(action, dtype=np.float64), dtype=torch.float, device=device)
+        dim = s.dim()-1
+        q = F.relu(self.linear_in(s))
+        q = F.relu(self.linear_h(q))
+        q_x = self.linear_out_x(q)
+        q_y = self.linear_out_y(q)
+        q_a = self.linear_out_a(q)
+        if imitation == True:
+            return torch.hstack((q_x, q_y, q_a))
+        q_x = self.sigmoid(q_x)
+        q_y = self.sigmoid(q_y)
+        q_a = self.sigmoid(q_a)
+        if inside == True:
+            return torch.hstack((q_x, q_y, q_a))
+        if rl == True:
+            q = torch.hstack((q_x, q_y, q_a))
+            q = torch.gather(q, 1, action)
+            return q
+        if np.random.rand() < rnd:
+            stochastic = True
+        if stochastic == False:
+            q_x = torch.sub(torch.argmax(q_x, dim=dim), 1)
+            q_y = torch.sub(torch.argmax(q_y, dim=dim), 1)
+            q_a = torch.sub(torch.argmax(q_a, dim=dim), 1)
+            action = torch.transpose(torch.vstack((q_x, q_y, q_a)), 0, 1)
+            if dim == 0: return action[0]
+            else: return action
+        if stochastic == True:
+            q_x = torch.sub(torch.multinomial(q_x, 1), 1)
+            q_y = torch.sub(torch.multinomial(q_y, 1), 1)
+            q_a = torch.sub(torch.multinomial(q_a, 1), 1)
+            action = torch.hstack((q_x, q_y, q_a))
+            return action
+    
+    
+  
+    
+class PolicyNetwork(nn.Module):
+    def __init__(self, device):
+        super(PolicyNetwork, self).__init__()
+        self.h_N = 200
+        self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax(dim=0)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
+        self.linear_in = nn.Linear(16, self.h_N).to(device)
+        self.linear_h = nn.Linear(self.h_N, self.h_N).to(device)
+        self.linear_out_x = nn.Linear(self.h_N, 3).to(device)
+        self.linear_out_y = nn.Linear(self.h_N, 3).to(device)
+        self.linear_out_a = nn.Linear(self.h_N, 3).to(device)
+
+    def forward(self, s, device, stochastic=False, imitation=False, rl=False, action=None):
+        if type(s).__module__ == np.__name__:
+            s = torch.tensor(s, dtype=torch.float, device=device)
+        dim = s.dim()-1
+        a = F.relu(self.linear_in(s))
+        a = F.relu(self.linear_h(a))
+        a_x = self.linear_out_x(a)
+        a_y = self.linear_out_y(a)
+        a_a = self.linear_out_a(a)
+        if imitation == True:
+            return torch.hstack((a_x, a_y, a_a))
+        a_x = self.softmax(a_x)
+        a_y = self.softmax(a_y)
+        a_a = self.softmax(a_a)
+        if rl == True:
+            p = torch.hstack((a_x, a_y, a_a))
+            return torch.unsqueeze(torch.diagonal(torch.tensordot(p, action, dims=([1],[1])), 0), 1)
+        if stochastic == False:
+            a_x = torch.sub(torch.argmax(a_x, dim=dim), 1)
+            a_y = torch.sub(torch.argmax(a_y, dim=dim), 1)
+            a_a = torch.sub(torch.argmax(a_a, dim=dim), 1)
+            action = torch.transpose(torch.vstack((a_x, a_y, a_a)), 0, 1)
+            if dim == 0: return action[0]
+            else: return action
+        if stochastic == True:
+            a_x = torch.sub(torch.multinomial(a_x, 1), 1)
+            a_y = torch.sub(torch.multinomial(a_y, 1), 1)
+            a_a = torch.sub(torch.multinomial(a_a, 1), 1)
+            action = torch.hstack((a_x, a_y, a_a))
+            return action
+        
+
+
+
+class CriticNetwork(nn.Module):
+    def __init__(self, device):
+        super(CriticNetwork, self).__init__()
+        self.h_N = 200
+        self.linear_in = nn.Linear(16, self.h_N).to(device)
+        self.linear_h = nn.Linear(self.h_N, self.h_N).to(device)
+        self.linear_out = nn.Linear(self.h_N, 1).to(device)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, s, device):
+        if type(s).__module__ == np.__name__:
+            s = torch.tensor(s, dtype=torch.float, device=device)
+        v = F.relu(self.linear_in(s))
+        v = F.relu(self.linear_h(v))
+        v = self.sigmoid(self.linear_out(v))
+        return v
+
