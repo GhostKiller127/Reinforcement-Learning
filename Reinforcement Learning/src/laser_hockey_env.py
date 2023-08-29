@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 import Box2D
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
 
-import gym
-from gym import spaces
-from gym.utils import seeding, EzPickle
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.utils import seeding, EzPickle
 
 import pyglet
 from pyglet import gl
@@ -577,7 +577,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         return obs, reward, self.done, info
 
     def render(self, mode='human'):
-        from gym.envs.classic_control import rendering
+        from gymnasium.envs.classic_control import rendering
         if self.viewer is None:
             self.viewer = rendering.Viewer(VIEWPORT_W, VIEWPORT_H)
             self.viewer.set_bounds(0, VIEWPORT_W / SCALE, 0, VIEWPORT_H / SCALE)
@@ -756,7 +756,7 @@ class HumanOpponent():
                 self.a_clockwise * -1 + self.a_anticlockwise * 1] # player angle
 
     
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 register(
     id='LaserHockey-v0',

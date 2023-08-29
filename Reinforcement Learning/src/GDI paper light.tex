@@ -1,0 +1,1237 @@
+\begin{abstract}
+To obtain higher sample efficiency and superior final performance  simultaneously has been one of the major challenges for deep reinforcement learning (DRL). Previous work could handle one of these challenges but typically failed to address them concurrently. In this paper, we try to tackle these two challenges simultaneously. To achieve this, we firstly decouple these challenges into two classic RL problems: data richness and exploration-exploitation trade-off. 
+Then, we cast these two problems into the training data distribution optimization problem, namely to obtain desired training data within limited interactions, and address them concurrently via \textbf{i)} explicit modeling and control of the capacity and diversity of behavior policy and \textbf{ii)} more fine-grained and adaptive control of selective/sampling distribution of the behavior policy using a monotonic data distribution optimization.  Finally, we integrate this process into Generalized Policy Iteration (GPI)  and obtain a more general framework called \textbf{G}eneralized \textbf{D}ata Distribution \textbf{I}teration (GDI). We use the GDI framework to introduce operator-based versions of well-known RL methods from DQN to Agent57. Theoretical guarantee of the superiority of GDI compared with GPI is concluded. We also demonstrate  our state-of-the-art (SOTA) performance on Arcade Learning Environment (ALE), wherein our algorithm  has achieved \GDIHmeanhns\% mean human normalized score (HNS), \GDIHmedianhns\% median HNS and surpassed \GDIHHWRB\ human world records using only 200M training frames. Our performance is comparable to Agent57's  while we consume 500 times less data.  We argue that  there is still a long way to go before obtaining real superhuman agents in ALE.
+\end{abstract}
+
+
+\section{Introduction}
+\label{sec: introduction}
+
+
+Reinforcement learning (RL) algorithms, when combined with high-capacity deep neural networks, have shown promise in domains ranging from video games \citep{dqn} to robotic manipulation \citep{trpo,ppo}. However, it still suffers from high sample complexity and unsatisfactory final performance, especially compared to human learning \citep{tsividis2017human}. Prior work could handle one of these problems but commonly failed to tackle both of them simultaneously.
+
+
+Model-free RL methods typically obtain remarkable final performance via finding a way to encourage exploration and  improve the data richness (e.g., $\frac{\text{Seen Conditions}}{\text{All Conditions}}$) that guarantees traversal of \emph{all possible} conditions. These methods \citep{goexplore,agent57} could perform remarkably well when interactions are (nearly) \emph{limitless} but normally fail when  interactions are \emph{limited}. We argue that when interactions are \emph{limited}, finding a way to guarantee traversal of \emph{all unseen} conditions is unreasonable, and perhaps we should find a way to traverse the \emph{nontrivial} conditions (e.g., unseen \citep{goexplore} and high-value \citep{discor}) first and avoid traversing the \emph{trivial/low-value} conditions repeatedly. In other words, we should explicitly control the training data distribution in RL and maximize the probability of nontrivial conditions being traversed, namely the \emph{data distribution optimization} (see Fig. \ref{fig: Algorithm Architecture Diagram}). 
+
+
+ In RL, training data distribution is normally controlled by the behavior policy \citep{sutton,dqn}, so that the data richness can be controlled by the capacity and diversity  of the behavior policy. Wherein the capacity describes \emph{how many different behavior policies there are in the policy space}, and the diversity describes \emph{how many different behavior policies are  selected/sampled from the policy space to generate training data} (discussed in Sec. \ref{sec: Explicit  Capacity and Diversity  Control of Behavior Policy}). When interactions are limitless, increasing the capacity and maximizing the diversity  via randomly sampling behavior policies (most prior works have achieved SOTA in this way) can significantly improve the data richness and guarantee traversal of almost all \emph{unseen} conditions, which induces better final performance \citep{agent57} and generalization  \citep{ghosh2021generalization}. However, perhaps surprisingly, this is not the case when interactions are limited, where each interaction is rare and the selection of the behavior policy becomes important. In conclusion, we should increase the probability of the traversal of \emph{unseen} conditions (i.e., exploration) via increasing the \emph{capacity} and \emph{diversity} of the behavior policy  and maximize the probability of  \emph{high-value} conditions (i.e., exploitation) being traversed via optimizing the selective distribution of the behavior policy. It's also known as  the  exploration-exploitation trade-off problem. 
+ 
+ From this perspective, we can understand why the prior SOTA algorithms, such as Agent57  and Go-Explore, failed  to obtain high sample efficiency. They have collected massive data to guarantee the traversal of \emph{unseen} conditions but ignore the different values of data. Therefore, they wasted many  trials to collect  \emph{useless/low-value} data, which accounts for their low sample efficiency. In other words, they failed to tackle the data distribution optimization problem.
+
+In this paper, we argue that the sample efficiency of model-free methods can be significantly improved  (even outperform the SOTA model-based schemes \cite{dreamerv2}) without degrading the final performance  via data distribution optimization.   To achieve this, we propose a data distribution optimization operator $\mathcal{E}$ to iteratively optimize the selective distribution of the behavior policy  and  thereby optimize the training data distribution. Specifically, we  construct a parameterized  policy space indexed by $\lambda$ called the soft entropy space, which enjoys a larger capacity  than Agent57. The behavior policies are sampled  from this policy space via a sampling distribution. Then, we adopt a meta-learning method to  optimize the sampling distribution of behavior policies iteratively and thereby achieve a more fine-grained exploration and exploitation trade-off. Moreover, training data collected by the optimized behavior policies will be used for RL optimization via the operator $\mathcal{T}$. This process will be illustrated in Fig. \ref{fig: Algorithm Architecture Diagram}, generalized in Sec. \ref{Sec: Methodology}, proved  superior in Sec. \ref{sec: Monotonic Data Distribution Optimization} and implemented in Sec. \ref{sec: Practical Implement Based on GDI}.
+
+The main contributions of our work are: 
+\begin{enumerate}
+    \item \textbf{A General RL Framework.} \emph{Efficient learning}  within \emph{limited} interactions induces the data distribution optimization problem. To tackle this problem, we firstly explicitly  control the diversity and capacity of the behavior policy (see Sec. \ref{sec: Explicit  Capacity and Diversity  Control of Behavior Policy}) and  then optimize the sampling distribution of behavior policies iteratively via a data distribution optimization operator (see Sec. \ref{sec: Generalized Data Distribution Iteration}). After integrating  them into GPI, we obtain a general RL framework, GDI (see Fig. \ref{fig: Algorithm Architecture Diagram}).
+    
+    \item \textbf{An Operator View of RL Algorithms.} We use the GDI framework to introduce operator-based versions of well-known RL methods from DQN to Agent57 in Sec. \ref{sec: An Operator View of RL Methods}, which leads to a better understanding of their original counterparts.
+
+    \item \textbf{Theoretical Proof of Superiority.}  We offer theoretical proof of the superiority of GDI in the case of both first-order and second-order optimization in Sec. \ref{sec: Monotonic Data Distribution Optimization}.
+
+    \item \textbf{The State-Of-The-Art Performance.} From Fig. \ref{fig: mean med hns and learning efficiency}, our algorithm GDI-H$^3$ has achieved \GDIHmeanhns\% mean HNS, outperforming the SOTA model-free algorithms Agent57. Surprisingly, our learning efficiency has outperformed the SOTA model-based methods Muzero and Dreamer-V2. Furthermore, our method has surpassed 22 Human World Records in 38 playtime days.
+\end{enumerate}
+
+
+
+
+\section{ Related Work}
+\label{sec:Problem Formulation and Related Work}
+
+% \changnan{IS THERE ANY REVIEWER Questioning THAT DATA RICHNESS AND E E TRADE-OFF ARE not disjoint?
+% So data richness emphasises that we need to see more data and e e trade-off says we cannot explore too much in cost of data efficiency? }
+
+\paragraph{Data richness.} As claimed by \citep{ghosh2021generalization},  generalization to unseen test conditions from a limited number of training conditions induces implicit partial observability, effectively turning even fully observed MDPs into POMDPs, which makes generalization in RL much more difficult. Therefore, data richness (e.g., $\frac{\text{Seen Conditions}}{\text{All Conditions}}$) is vital for the generalization and performance of RL agents.  When interactions are limited, more diverse behavior policies increase the data richness and thereby reduce the proportion of unseen conditions  and  improve generalization and performance.  Therefore, we can recast this problem into the problem to control the  capacity and diversity  of the behavior policy. There are two promising ways to handle this issue. 
+Firstly, some RL methods adopt intrinsic reward to encourage exploration, where unsupervised objectives, auxiliary tasks and other techniques induce the intrinsic reward \citep{icm}.
+Other methods \citep{agent57} introduced a diversity-based regularizer into the RL objective and trained a family of policies with different degrees of exploratory behaviors.   Despite both obtaining SOTA performance, adopting intrinsic rewards and entropy regularization has increased the uncertainty of environmental transition. We argue that the inability to effectively tackle the  data distribution optimization accounts for their low learning efficiency. 
+ 
+%  \changnan{Improper class. Firstly, some RL methods adopt intrinsic reward to encourage exploration, where unsupervised objectives, auxiliary tasks and other techniques induce the intrinsic reward. cite icm diversity rnd}
+
+% \changnan{'using a shared net arch' is not accurate, can be deleted}
+
+
+
+\paragraph{Exploration and exploitation trade-off. } Exploration and exploitation trade-off remains one of the significant  challenges in DRL \citep{ngu,sutton}.  In general, methods that guarantee to find an optimal policy require the number of visits to each state–action pair to approach infinity. The entropy of policy would collapse
+to zero swiftly after a finite number of steps may never learn to act optimally; they may instead converge prematurely to sub-optimal policies and never gather the data they need to learn to act optimally. Therefore, to ensure that all state-action pairs are encountered infinitely, off-policy learning methods are widely used \citep{a3c,impala}, and agents must learn to adjust the entropy (exploitation degree) of the behavior policy. Adopting stochastic policies into the behavior policy has been widely used in RL algorithms \citep{dqn,rainbow}, such as the $\epsilon$-greedy \citep{epsilongreedy}. These methods  can perform remarkably well in dense reward scenarios \citep{dqn}, but fail to learn in  sparse reward environments. Recent approaches \citep{agent57} have proposed to train a family of policies and provide  intrinsic rewards and entropy regularization to agents to drive exploration. Among these methods, the intrinsic rewards  are proportional to some notion of saliency, quantifying how different the current state is from those already visited.  They have achieved SOTA performance at the cost of a relatively lower sample efficiency.  We argue that these algorithms overemphasize the role of exploration to traverse \emph{unseen} conditions but ignore the \emph{value} of data and thereby waste many trails to collect \emph{low-value} data, accounting for their low sample efficiency.
+% \changnan{cannot understand, a typo sentence?}
+\section{Preliminaries}
+
+ The RL problem can be formulated as a Markov Decision Process \citep[MDP]{howard1960dynamic} defined by $\left(\mathcal{S}, \mathcal{A}, p, r, \gamma, \rho_{0}\right)$. 
+ Considering a discounted episodic MDP, the initial state $s_0$ is sampled from the initial distribution $\rho_0(s): \mathcal{S} \rightarrow \Delta(\mathcal{S})$, where we use $\Delta$ to represent the probability simplex.
+ At each time $t$, the agent chooses an action $a_t \in \mathcal{A}$ according to the policy $\pi(a_t|s_t): \mathcal{S} \rightarrow \Delta(\mathcal{A})$ at state $s_t \in \mathcal{S}$. 
+ The environment receives $a_t$, produces the reward $r_t \sim r(s,a): \mathcal{S} \times \mathcal{A} \rightarrow \mathbf{R}$ and transfers to the next state $s_{t+1}$  according to the transition distribution $p\left(s^{\prime} \mid s, a\right): \mathcal{S} \times \mathcal{A} \rightarrow \Delta(\mathcal{S})$. 
+ The process continues until the agent reaches a terminal state or a maximum time step. 
+ Define the discounted state visitation distribution as 
+ $d_{\rho_0}^{\pi} (s) = (1 - \gamma) \textbf{E}_{s_0 \sim \rho_0} 
+ \left[ \sum_{t=0}^{\infty} \gamma^t \textbf{P} (s_t = s | s_0) \right]$.
+ The goal of reinforcement learning is to find the optimal policy $\pi^*$ that maximizes the expected sum of discounted rewards, denoted by $\mathcal{J}$ \citep{sutton}:
+\begin{equation}
+\label{eq_accmulate_reward}
+\begin{aligned}
+\pi^{*}
+&= \underset{\pi}{\operatorname{argmax}} \textbf{E}_{s_t \sim d_{\rho_0}^{\pi}} \textbf{E}_{\pi} \left[\sum_{k=0}^{\infty} \gamma^{k} r_{t+k} | s_t \right] \\
+\end{aligned}
+\end{equation}
+where $\gamma \in(0,1)$ is the discount factor.
+
+
+\section{Methodology}
+\label{Sec: Methodology}
+\subsection{Notation Definition}
+
+Let's introduce our notations first, which are also summarized in App. \ref{app: Abbreviation and Notation}.
+
+Define $\Lambda$ to be an index set, $\Lambda \subseteq \textbf{R}^k$.
+$\lambda \in \Lambda$ is an index in $\Lambda$.
+$(\Lambda, \mathcal{B}|_{\Lambda}, \mathcal{P}_{\Lambda})$ is a probability space, where $\mathcal{B}|_{\Lambda}$ is a Borel $\sigma$-algebra restricted to $\Lambda$.
+Under the setting of meta-RL, $\Lambda$ can be regarded as the set of all possible meta information.
+Under the setting of population-based training (PBT) \citep{PBT}, $\Lambda$ can be regarded as the set of the whole population.
+
+Define $\Theta$ to be a set of all possible values of parameters (e.g., parameters of value function network and policy network).
+$\theta \in \Theta$ is some specific value of parameters.
+For each index $\lambda$, there exists a specific mapping between each parameter of $\theta$ and $\lambda$, denoted as $\theta_\lambda$, to indicate the parameters in $\theta$ corresponding to $\lambda$ (e.g., $\epsilon$ in $\epsilon$-greedy behavior policies).
+Under the setting of linear regression $y = w \cdot x$, $\Theta = \{w \in R^n\}$ and $\theta = w$.
+If $\lambda$ represents using only the first half features to perform regression, assume $w = (w_1, w_2)$, then $\theta_\lambda = w_1$.  
+Under the setting of RL, $\theta_{\lambda}$ defines a parameterized policy indexed by $\lambda$, denoted as $\pi_{\theta_{\lambda}}$.
+
+Define $\mathcal{D} \overset{def}{=} \{d^\pi_{\rho_{0}} |\ \pi \in {\Delta (\mathcal{A})}^\mathcal{S}, \rho_{0} \in \Delta(\mathcal{S}) \}$ to be the set of all states visitation distributions.
+For the parameterized policies, denote 
+$\mathcal{D}_{\Lambda, \Theta, \rho_{0}} \overset{def}{=} \{d^{\pi_{\theta_{\lambda}}}_{\rho_{0}} |\ \theta \in \Theta, \lambda \in \Lambda \}$.
+Note that $(\Lambda, \mathcal{B}|_{\Lambda}, \mathcal{P}_{\Lambda})$ is a probability space on $\Lambda$, 
+which induces a probability space on $\mathcal{D}_{\Theta, \Lambda, \rho_{0}}$,
+with the probability measure given by 
+$\mathcal{P}_{\mathcal{D}} (\mathcal{D}_{\Lambda_0, \Theta, \rho_{0}}) 
+= \mathcal{P}_{\Lambda} (\Lambda_0),\ \forall \Lambda_0 \in \mathcal{B}|_\Lambda$.
+
+We use $x$ to represent one sample, which contains all necessary information for learning. 
+As for DQN, $x = (s_t, a_t, r_t, s_{t+1})$.
+As for R2D2, $x = (s_t, a_t, r_t, \dots, s_{t+N}, a_{t+N}, r_{t+N}, s_{t+N+1})$.
+As for IMPALA, $x$ also contains the distribution of the behavior policy.
+The content of $x$ depends on the algorithm, but it's assumed to be sufficient for learning.
+We use $\mathcal{X}$ to represent the set of samples.
+At training stage $t$, 
+given the parameter $\theta = \theta^{(t)}$, 
+the distribution of the index set $\mathcal{P}_{\Lambda} = \mathcal{P}^{(t)}_{\Lambda}$ (e.g., sampling distribution of behavior policy)
+and the distribution of the initial state $\rho_0$, 
+we denote the set of samples as
+\begin{equation*}
+\begin{aligned}
+    \mathcal{X}_{\rho_{0}}^{(t)}
+    &\overset{def}{=} \bigcup_{d_{\rho_{0}}^\pi \sim \mathcal{P}_\mathcal{D}^{(t)}} \{ x | x \sim d_{\rho_{0}}^\pi \} \\
+    &= \bigcup_{\lambda \sim \mathcal{P}_{\Lambda}^{(t)}} 
+    \{ x | x \sim d_{\rho_{0}}^{\pi_\theta}, 
+    \theta   = {\theta^{(t)}_{\lambda}} \}
+    \\
+    &\triangleq \bigcup_{\lambda \sim \mathcal{P}_{\Lambda}^{(t)}} \mathcal{X}^{(t)}_{\rho_{0}, \lambda}.
+\end{aligned}
+\end{equation*}
+
+
+\subsection{Capacity and Diversity  Control of Behavior Policy} 
+\label{sec: Explicit  Capacity and Diversity  Control of Behavior Policy}
+
+We consider the problem that behavior policies $\mu$ are sampled from a policy space $\{\pi_{\theta_{\lambda}} | \lambda \in \Lambda\}$ which is parameterized by the policy network and indexed by the index set $\Lambda$.
+The capacity of $\mu$ describes \emph{how many different behavior policies are there in the policy space}, controlled by the base policy's capacity (e.g., shared parameters or not) and the size of the index set $|\Lambda|$. Noting that there are two sets of parameters, namely $\lambda$ and $\theta$. The diversity describes \emph{how many different behavior policies are actually selected from the policy space to generate training data}, controlled by the sampling/selective distribution $\mathcal{P}_\Lambda$ (see Fig. \ref{fig: Algorithm Architecture Diagram}). 
+ 
+After the capacity of the base policy is determined, we can explicitly control the data richness via the size of the index set and the sampling distribution $\mathcal{P}_\Lambda$. On the condition that  interactions are limitless, increasing the size  of the index set can significantly improve the data richness and thus is more important for a superior final performance since the diversity can be maximized via adopting a uniform distribution (most prior works have achieved SOTA in this way). However, it's data inefficient and the condition may never hold. Considering interactions are limited, the optimization of the sampling distribution, namely to select suitable behavior policies to generate training data, is crucial for sample efficiency because each interaction is rare. It's also known as the exploration-exploitation trade-off problem.
+
+\subsection{Data Distribution Optimization Problem}
+\label{sec: Data Distribution Optimization Problem}
+
+In conclusion, the final performance can be significantly improved via increasing the data richness controlled by  the capacity and diversity of behavior policy. The sample efficiency is significantly influenced by the exploration-exploitation trade-off, namely the sampling/selective distribution  of the behavior policy. In general, on the condition that the capacity of behavior policy is \emph{determined} and training data is totally generated by behavior policies, these problems can be cast into  the data distribution optimization problem:
+
+\begin{definition}[Data Distribution Optimization Problem] \label{Data Distribution Optimization Problem} Finding a selective distribution $\mathcal{P}_{\Lambda}$ that samples behavior policies $\pi_{\theta_\lambda}$ from a parameterized policy space that indexed by $\Lambda$ and maximizing some target function $L_{\mathcal{E}}$, where the $L_{\mathcal{E}}$ can be any target function (e.g., RL target) that describes what kind of data do agents desire (i.e., a measure of the importance/value of the sample trajectory).
+\end{definition}
+
+ \subsection{Generalized Data Distribution Iteration}
+ \label{sec: Generalized Data Distribution Iteration}
+ Now we introduce our main algorithm to handle the data distribution optimization problem in RL.
+
+\begin{figure}[ht]
+  \centering
+  \begin{minipage}{\linewidth}
+    \begin{algorithm}[H]
+      \caption{Generalized Data Distribution Iteration}  
+          \begin{algorithmic}
+            \STATE Initialize $\Lambda$, $\Theta$, $\mathcal{P}_{\Lambda}^{(0)}$, $\theta^{(0)}$.
+            \FOR{$t=0,1,2,\dots$}
+                \STATE Sample $\{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}}$. \COMMENT{Data Sampling}
+                \STATE $\theta^{(t+1)} = \mathcal{T}( \theta^{(t)}, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}} )$. \COMMENT{Generalized Policy Iteration} 
+                \STATE $\mathcal{P}_{\Lambda}^{(t+1)}  = \mathcal{E}(\mathcal{P}_{\Lambda}^{(t)}, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}} )$. \COMMENT{Data Distribution Iteration}
+            \ENDFOR
+          \end{algorithmic}
+        \label{alg:GDI}
+    \end{algorithm}
+  \end{minipage}
+\end{figure}
+
+$\mathcal{T}$ defined as $\theta^{(t+1)} 
+= \mathcal{T}( \theta^{(t)}, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}} )$
+is a typical optimization operator of RL algorithms, 
+which utilizes the collected samples to update the parameters for maximizing some function $L_{\mathcal{T}}$.
+For instance, $L_{\mathcal{T}}$ may contain the policy gradient and the state value evaluation for the policy-based methods, 
+may contain generalized policy iteration for the value-based methods, 
+and may also contain some auxiliary tasks or intrinsic rewards for specially designed methods.
+
+$\mathcal{E}$ defined as $\mathcal{P}_{\Lambda}^{(t+1)}  
+= \mathcal{E}(\mathcal{P}_{\Lambda}^{(t)}, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}} )$ 
+is a data distribution optimization operator.
+It uses the samples $\{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}}$ to update $\mathcal{P}_{\Lambda}$ and maximize some function $L_{\mathcal{E}}$, namely,
+\begin{equation*}
+    \mathcal{P}_{\Lambda}^{(t+1)} = \argmax_{\mathcal{P}_{\Lambda}} L_{\mathcal{E}} (\{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}_{\Lambda}}).
+\end{equation*}
+Since $\mathcal{P}_{\Lambda}$ is parameterized,  we abuse the notation and use $\mathcal{P}_{\Lambda}$ to represent the parameter of $\mathcal{P}_{\Lambda}$.
+If $\mathcal{E}$ is a first-order optimization operator, then we can write $\mathcal{E}$ explicitly as
+\begin{equation*}
+    \mathcal{P}_{\Lambda}^{(t+1)} = \mathcal{P}_{\Lambda}^{(t)} + \eta \nabla_{\mathcal{P}_{\Lambda}^{(t)}} L_{\mathcal{E}} (\{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}}).
+\end{equation*}
+If $\mathcal{E}$ is a second-order optimization operator, like natural gradient, we can write $\mathcal{E}$ formally as
+% \begin{equation*}
+    \begin{gather*}
+        \mathcal{P}_{\Lambda}^{(t+1)} = \mathcal{P}_{\Lambda}^{(t)} + \eta
+        \textbf{F}(\mathcal{P}_{\Lambda}^{(t)})^\dagger
+        \nabla_{\mathcal{P}_{\Lambda}^{(t)}} L_{\mathcal{E}} (\{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}}), \\
+        \textbf{F}(\mathcal{P}_{\Lambda}^{(t)}) = \left[\nabla_{\mathcal{P}_{\Lambda}^{(t)}} \log \mathcal{P}_{\Lambda}^{(t)} \right]
+        \cdot
+        \left[\nabla_{\mathcal{P}_{\Lambda}^{(t)}} \log \mathcal{P}_{\Lambda}^{(t)} \right]^\top, \\
+    \end{gather*}
+% \end{equation*}
+where $\dagger$ denotes the Moore-Penrose pseudoinverse of the matrix.
+
+\subsection{An Operator View of RL Methods}
+\label{sec: An Operator View of RL Methods}
+We can further divide all algorithms into two categories, GDI-I$^n$ and GDI-H$^n$.
+$n$ represents the degree of freedom of $\Lambda$, which is the dimension of selective distribution.
+I represents Isomorphism. 
+We say one algorithm belongs to GDI-I$^n$, if $\theta = \theta_{\lambda}, \, \forall \lambda \in \Lambda$.
+H represents Heterogeneous.
+We say one algorithm belongs to GDI-H$^n$, if $\theta_{\lambda_1} \neq \theta_{\lambda_2}, \, \exists \lambda_1, \lambda_2 \in \Lambda$.
+By definition, GDI-H$^n$ is a much larger set than GDI-I$^n$, but many algorithms belong to GDI-I$^n$ rather than GDI-H$^n$.
+We say one algorithm is "w/o $\mathcal{E}$" if it doesn't contain the operator $\mathcal{E}$, which means its $\mathcal{E}$ is an identical mapping and the data distribution is not additionally optimized. 
+Now, we could understand some well-known RL methods from the view of GDI.
+
+% Now we discuss the connections between GDI and some algorithms.
+
+For DQN, RAINBOW, PPO and IMPALA, they are in GDI-I$^0$ w/o $\mathcal{E}$. Let $|\Lambda| = 1$, WLOG, assume $\Lambda = \{\lambda_0\}$.
+Then, the probability measure $\mathcal{P}_{\Lambda}$ collapses to $\mathcal{P}_{\Lambda} (\lambda_0) = 1$. 
+$\Theta = \{\theta_{\lambda_0}\}$.
+$\mathcal{E}$ is an identical mapping of $\mathcal{P}_{\Lambda}^{(t)}$.
+$\mathcal{T}$ is the first-order operator that optimizes the loss functions.
+
+For Ape-X and R2D2, they are in GDI-I$^1$ w/o $\mathcal{E}$. 
+Let $\Lambda = \{\epsilon_l |\ l = 1, \dots, 256\}$.
+$\mathcal{P}_{\Lambda}$ is uniform, $\mathcal{P}_{\Lambda} (\epsilon_l) = |\Lambda|^{-1}$.
+Since all actors and the learner share parameters, we have $\theta_{\epsilon_1} = \theta_{\epsilon_2}$ for $\forall \epsilon_1, \epsilon_2 \in \Lambda$, hence $\Theta = \bigcup_{\epsilon \in \Lambda} \{\theta_{\epsilon}\} = \{\theta_{\epsilon_l}\}, \ \forall\ l = 1,\dots, 256$.
+$\mathcal{E}$ is an identical mapping, because $\mathcal{P}_{\Lambda}^{(t)}$ is always a uniform distribution.
+$\mathcal{T}$ is the first-order operator that optimizes the loss functions.
+
+For LASER, it's in GDI-H$^1$ w/o $\mathcal{E}$. 
+Let $\Lambda = \{i |\ i = 1, \dots, K\}$ to be the number of learners.
+$\mathcal{P}_{\Lambda}$ is uniform, $\mathcal{P}_{\Lambda} (i) = |\Lambda|^{-1}$.
+Since different learners don't share parameters, $\theta_{i_1} \cap \theta_{i_2} = \emptyset$ for $\forall i_1, i_2 \in \Lambda$, hence $\Theta = \bigcup_{i \in \Lambda} \{\theta_i\}$.
+$\mathcal{E}$ is an identical mapping.
+$\mathcal{T}$ can be formulated as a union of $\theta^{(t+1)}_i 
+= \mathcal{T}_{i}( \theta^{(t)}_i, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}} )$, 
+which represents optimizing $\theta_i$ of the $i$th learner with shared samples from other learners.
+
+For PBT, it's in GDI-H$^{n+1}$, where $n$ is the number of  searched hyperparameters.
+Let $\Lambda = \{h\} \times \{i| i=1,\dots, K\}$, where $h$ represents the hyperparameters being searched and $K$ is the population size.
+$\Theta = \bigcup_{i=1,\dots, K} \{\theta_{i, h}\}$, where $\theta_{i, h_1} = \theta_{i, h_2}$ for $\forall (h_1, i), (h_2, i) \in \Lambda$.
+$\mathcal{E}$ is the meta-controller that adjusts $h$ for each $i$, which can be formally written as 
+$\mathcal{P}_{\Lambda}^{(t+1)}(\cdot, i)
+= \mathcal{E}_{i}(\mathcal{P}_{\Lambda}^{(t)}(\cdot, i), \{\mathcal{X}^{(t)}_{\rho_0, (h, i)}\}_{h \sim \mathcal{P}^{(t)}_{\Lambda}(\cdot, i)} )$,
+which optimizes $\mathcal{P}_{\Lambda}$ according to the performance of all agents in the population.
+$\mathcal{T}$ can also be formulated as a union of $\mathcal{T}_i$, but is 
+$\theta^{(t+1)}_i 
+= \mathcal{T}_{i}( \theta^{(t)}_i, \{\mathcal{X}^{(t)}_{\rho_0, (h, i)}\}_{h \sim \mathcal{P}^{(t)}_{\Lambda}(\cdot, i)})$,
+which represents optimizing the $i$th agent with samples from the $i$th agent.
+
+For NGU and Agent57, it's in GDI-I$^2$. 
+Let $\Lambda = \{\beta_i | i=1,\dots,m\} \times \{\gamma_j | j=1,\dots,n\}$, where $\beta$ is the weight of the intrinsic value function and $\gamma$ is the discount factor.
+Since all actors and the learner share variables, $\Theta = \bigcup_{(\beta, \gamma) \in \Lambda} \{\theta_{(\beta, \gamma)}\} = \{\theta_{(\beta, \gamma)}\}$ for $\forall (\beta, \gamma) \in \Lambda$.
+$\mathcal{E}$ is an optimization operator of a multi-arm bandit controller with UCB, which aims to maximize the expected cumulative rewards by adjusting $\mathcal{P}_{\Lambda}$.
+Different from above, $\mathcal{T}$ is identical to our general definition $\theta^{(t+1)} 
+= \mathcal{T}( \theta^{(t)}, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}} )$,
+which utilizes samples from all $\lambda$s to update the shared $\theta$.
+
+
+For Go-Explore, it's in GDI-H$^1$. 
+Let $\Lambda = \{\tau\}$, where $\tau$ represents the stopping time of switching between robustification and exploration.
+$\Theta = \{\theta_r\} \cup \{\theta_e\}$, where $\theta_r$ is the robustification model and $\theta_e$ is the exploration model.
+$\mathcal{E}$ is a search-based controller, which defines the next $\mathcal{P}_{\Lambda}$ for better exploration.
+$\mathcal{T}$ can be decomposed into $(\mathcal{T}_r, \mathcal{T}_e)$.
+
+\subsection{Monotonic Data Distribution Optimization}
+\label{sec: Monotonic Data Distribution Optimization}
+
+We see that many algorithms can be formulated as a special case of GDI.
+For algorithms without a meta-controller, whose data distribution optimization operator $\mathcal{E}$ is an identical mapping, the guarantee that the learned policy could converge to the optimal policy has been widely studied, for instance, GPI in \citep{sutton} and policy gradient in \citep{pgtheory}.
+However, for algorithms with a meta-controller, whose data distribution optimization operator $\mathcal{E}$ is non-identical, though most algorithms in this class show superior performance, it still lacks a general study on why the data distribution optimization operator $\mathcal{E}$ helps.
+In this section, with a few assumptions, we show that given the same optimization operator $\mathcal{T}$, a GDI with a non-identical data distribution optimization operator $\mathcal{E}$ is always superior to that without $\mathcal{E}$.
+
+For brevity, we denote the expectation of $L_\mathcal{E}, L_\mathcal{T}$ for each $\lambda \in \Lambda$ as $\mathcal{L}_{\mathcal{E}} (\lambda, \theta_\lambda) $ and $\mathcal{L}_{\mathcal{T}} (\lambda, \theta_\lambda)$, calculated as
+\begin{equation*}
+\begin{aligned}
+        \mathcal{L}_{\mathcal{E}} (\lambda, \theta_\lambda) 
+    && = \textbf{E}_{x \sim \pi_{\theta_\lambda}} [L_{\mathcal{E}} (\{\mathcal{X}_{\rho_0, \lambda}\})]\\ 
+    \mathcal{L}_{\mathcal{T}} (\lambda, \theta_\lambda) 
+    && = \textbf{E}_{x \sim \pi_{\theta_\lambda}} [L_{\mathcal{T}} (\{\mathcal{X}_{\rho_0, \lambda}\})]
+\end{aligned}
+\end{equation*}
+and denote the expectation of $\mathcal{L}_\mathcal{E}(\lambda, \theta_\lambda), \mathcal{L}_\mathcal{T}(\lambda, \theta_\lambda)$ for any $\mathcal{P}_{\Lambda}$ as 
+    $\mathcal{L}_{\mathcal{E}} (\mathcal{P}_{\Lambda}, \theta) 
+    = \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}} [\mathcal{L}_{\mathcal{E}} (\lambda, \theta_\lambda) ], \ 
+    \mathcal{L}_{\mathcal{T}} (\mathcal{P}_{\Lambda}, \theta) 
+    = \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}}  [\mathcal{L}_{\mathcal{T}} (\lambda, \theta_\lambda)].$
+
+\begin{Assumption}[Uniform Continuous Assumption]
+    For $\forall \epsilon > 0,\  \forall s \in \mathcal{S},\ \exists\, \delta > 0,\ s.t. |V^{\pi_1} (s) - V^{\pi_2} (s)| < \epsilon,\ \forall\, d_{\pi} (\pi_1, \pi_2) < \delta$,
+    where $d_\pi$ is a metric on ${\Delta(\mathcal{A})}^\mathcal{S}$.
+    If $\pi$ is parameterized by $\theta$, then for $\forall \epsilon > 0,\  \forall s \in \mathcal{S},\ \exists\, \delta > 0,\ s.t. |V^{\pi_{\theta_1}} (s) - V^{\pi_{\theta_2}} (s)| < \epsilon,\ \forall\, || \theta_1 - \theta_2 || < \delta$.
+\label{asp:1}
+\end{Assumption}
+\begin{Remark}
+    \citep{polytope} shows $V^\pi$ is infinitely differentiable everywhere on $\Delta (\mathcal{A})^{\mathcal{S}}$ if $|\mathcal{S}| < \infty, |\mathcal{A}| < \infty$.
+    \citep{pgtheory} shows $V^\pi$ is $\beta$-smooth, namely bounded second-order derivative, for direct parameterization.
+    If $\Delta (\mathcal{A})^{\mathcal{S}}$ is compact, continuity implies uniform continuity.
+\end{Remark}
+
+\begin{Assumption}[Formulation of $\mathcal{E}$ Assumption]
+    Assume
+    $\mathcal{P}_{\Lambda}^{(t+1)} 
+    = \mathcal{E}(\mathcal{P}_{\Lambda}^{(t)}, \{\mathcal{X}^{(t)}_{\rho_0, \lambda}\}_{\lambda \sim \mathcal{P}^{(t)}_{\Lambda}}) $
+    can be written as 
+    $\mathcal{P}_{\Lambda}^{(t+1)} (\lambda)= \mathcal{P}_{\Lambda}^{(t)}(\lambda) \frac{\exp (\eta \mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}^{(t)})  )}{Z^{(t+1)}}$, 
+    $Z^{(t+1)} = \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t)}}[\exp (\eta \mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}^{(t)})  )]$.
+\label{asp:2}
+\end{Assumption}
+\begin{Remark}
+    The assumption is actually general.
+    Regarding $\Lambda$ as an action space and 
+    $r_\lambda 
+    = \mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}^{(t)})$, when solving $\argmax_{\mathcal{P}_{\Lambda}} \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}} [\mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}^{(t)})] 
+    = \argmax_{\mathcal{P}_{\Lambda}} \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}} [r_\lambda]$, the data distribution optimization operator $\mathcal{E}$ is equivalent to solving a multi-arm bandit (MAB) problem.
+    For the first-order optimization, \citep{eq_pg_q} shows that the solution of a KL-regularized version, $\argmax_{\mathcal{P}_{\Lambda}} \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}} [r_\lambda] - \eta KL(\mathcal{P}_{\Lambda} || \mathcal{P}_{\Lambda}^{(t)})$, is exactly the assumption.
+    For the second-order optimization, let $\mathcal{P}_{\Lambda} = softmax (\{r_\lambda\})$, \citep{pgtheory} shows that the natural policy gradient of a softmax parameterization also induces exactly the assumption.
+\end{Remark}
+
+\begin{Assumption}[First-Order Optimization Co-Monotonic Assumption]
+    For $\forall\, \lambda_1, \lambda_2 \in \Lambda$, we have
+    $[ \mathcal{L}_{\mathcal{E}} (\lambda_1, \theta_{\lambda_1})  -  \mathcal{L}_{\mathcal{E}} (\lambda_2, \theta_{\lambda_2}) ] \cdot
+    [ \mathcal{L}_{\mathcal{T}} (\lambda_1, \theta_{\lambda_1})  -  \mathcal{L}_{\mathcal{T}} (\lambda_2, \theta_{\lambda_2}) ] \geq 0$.
+\label{asp:3}
+\end{Assumption}
+
+\begin{Assumption}[Second-Order Optimization Co-Monotonic Assumption]
+    For $\forall\, \lambda_1, \lambda_2 \in \Lambda$,
+    $\exists\, \eta_0 > 0$, s.t. $\forall\, 0 < \eta < \eta_0$, we have
+    $[ \mathcal{L}_{\mathcal{E}} (\lambda_1, \theta_{\lambda_1})  -  \mathcal{L}_{\mathcal{E}} (\lambda_2, \theta_{\lambda_2}) ] \cdot
+    [ G^{\eta} \mathcal{L}_{\mathcal{T}} (\lambda_1, \theta_{\lambda_1}) 
+    - G^{\eta} \mathcal{L}_{\mathcal{T}} (\lambda_2, \theta_{\lambda_2}) ] \geq 0$,
+    where $\theta_{\lambda}^{\eta} = \theta_{\lambda} + \eta \nabla_{\theta_{\lambda}} \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda})$ and
+    $G^{\eta} \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda})
+    = \frac{1}{\eta} \left[\mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{\eta}) - \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}) \right]$.
+\label{asp:4}
+\end{Assumption}
+
+Under assumptions \eqref{asp:1} \eqref{asp:2} \eqref{asp:3}, if $\mathcal{T}$ is a first-order operator, namely a gradient accent operator, to maximize $\mathcal{L}_{\mathcal{T}}$, GDI can be guaranteed to be superior to that w/o $\mathcal{E}$.
+Under assumptions \eqref{asp:1} \eqref{asp:2} \eqref{asp:4}, if $\mathcal{T}$ is a second-order operator, namely a natural gradient operator, to maximize $\mathcal{L}_{\mathcal{T}}$, GDI can also be guaranteed to be superior to that w/o $\mathcal{E}$.
+
+\begin{Theorem}[First-Order Optimization with Superior Target]
+    Under assumptions \eqref{asp:1} \eqref{asp:2} \eqref{asp:3}, we have
+    $\mathcal{L}_{\mathcal{T}} (\mathcal{P}_{\Lambda}^{(t+1)}, \theta^{(t+1)}) 
+     = \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t+1)}}  [\mathcal{L}_{\mathcal{T}} (\lambda, \theta^{(t+1)}_{\lambda})]
+     \geq \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t)}}  [\mathcal{L}_{\mathcal{T}} (\lambda, \theta^{(t+1)}_{\lambda})]
+     = \mathcal{L}_{\mathcal{T}} (\mathcal{P}_{\Lambda}^{(t)}, \theta^{(t+1)})$.
+\label{thm:1st_gdi}
+\end{Theorem}
+
+\begin{Proof}
+    By \textbf{Theorem} \ref{thm:cts_Rp} (see App. \ref{App: proof}), the upper triangular transport inequality, 
+    let $f(\lambda) = \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda})$ and 
+    $g(\lambda) = \mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda})$,
+    the proof is done.
+\end{Proof}
+
+\begin{Remark}[Superiority of Target]
+     In Algorithm \ref{alg:GDI}, if $\mathcal{E}$ updates $\mathcal{P}_{\Lambda}^{(t)}$ at time $t$, then the operator $\mathcal{T}$ at time $t+1$ can be written as $\theta^{(t+2)} = \theta^{(t+1)} + \eta \nabla_{\theta^{(t+1)}} \mathcal{L}_{\mathcal{T}} (\mathcal{P}_{\Lambda}^{(t+1)}, \theta^{(t+1)})$.
+     If $\mathcal{P}_{\Lambda}^{(t)}$ hasn't been updated at time $t$, then the operator $\mathcal{T}$ at time $t+1$ can be written as $\theta^{(t+2)} = \theta^{(t+1)} + \eta \nabla_{\theta^{(t+1)}} \mathcal{L}_{\mathcal{T}} (\mathcal{P}_{\Lambda}^{(t)}, \theta^{(t+1)})$.
+     \textbf{Theorem} \ref{thm:1st_gdi} shows that the target of $\mathcal{T}$ at time $t+1$ becomes higher if $\mathcal{P}_{\Lambda}^{(t)}$ is updated by $\mathcal{E}$ at time $t$.
+\end{Remark}
+
+
+\begin{table*}[!htbp]
+\small
+\setlength{\tabcolsep}{1.0pt}
+    \centering
+    \caption{Experiment results of Atari. Playtime is the equivalent human playtime, HWRB is the human world record breakthrough, HNS is the human normalized score, HWRNS is the human world records normalized score, $\text{SABER}=\max\{\min\{\text{HWRNS},2\},0\}$.}
+    \label{tab:atari_results}
+    \begin{tabular}{c c c c c c c c c}
+    \toprule
+                      & GDI-H$^3$                   & GDI-I$^3$               & Muesli & RAINBOW & LASER & R2D2 & NGU & Agent57\\
+    \midrule
+     Training Scale (Num. Frames)      &\textbf{2E+8}        &\textbf{2E+8}       &\textbf{2E+8}  & \textbf{2E+8} & \textbf{2E+8}  & 1E+10   & 3.5E+10  &1E+11 \\
+    Playtime (Day)  & \textbf{\GDIHgametime}       & \textbf{\GDIIgametime}      & \textbf{\muesligametime} & \textbf{\rainbowgametime} & \textbf{\lasergametime}  & \rtdtgametime   & \ngugametime    & \agentgametime \\
+    HWRB              &\textbf{\GDIHHWRB}          &\GDIIHWRB         & \muesliHWRB             & \rainbowHWRB             & \laserHWRB              & \rtdtHWRB      & \nguHWRB & \agentHWRB \\
+    Mean HNS(\%)      &\textbf{\GDIHmeanhns}     &\GDIImeanhns    & \mueslimeanhns        & \rainbowmeanhns        & \lasermeanhns        & \rtdtmeanhns &\ngumeanhns   &\agentmeanhns \\
+    Median HNS(\%)    &\GDIHmedianhns               &\GDIImedianhns               & \mueslimedianhns        & \rainbowmedianhns        & \lasermedianhns         & \rtdtmedianhns & \ngumedianhns   &\textbf{\agentmedianhns}\\
+    Mean HWRNS(\%)    &\textbf{\GDIHmeanHWRNS}      &\GDIImeanHWRNS              & \mueslimeanHWRNS         & \rainbowmeanHWRNS         & \lasermeanHWRNS           & \rtdtmeanHWRNS   & \ngumeanHWRNS     &\agentmeanHWRNS\\
+    Median HWRNS(\%)  &\textbf{\GDIHmedianHWRNS}                &\GDIImedianHWRNS               & \mueslimedianHWRNS          & \rainbowmedianHWRNS          & \lasermedianHWRNS           &\rtdtmedianHWRNS    & \ngumedianHWRNS    &\agentmedianHWRNS\\
+    Mean SABER(\%)    &\GDIHmeanSABER                &\GDIImeanSABER               & \mueslimeanSABER          & \rainbowmeanSABER         & \lasermeanSABER          &\rtdtmeanSABER    &\ngumeanSABER &\textbf{\agentmeanSABER}\\
+    Median SABER(\%)  &\textbf{\GDIHmedianSABER}                & \GDIImedianSABER              & \mueslimedianSABER          & \rainbowmedianSABER         & \lasermedianSABER           &\rtdtmedianSABER    & \ngumedianSABER     &\agentmedianSABER\\
+    \bottomrule
+    \end{tabular}
+\end{table*}
+\normalsize
+
+
+\begin{Example}[Practical Implementation]
+    % We provide one possible practical setting of GDI. 
+    Let $\mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}) = \mathcal{J}_{\pi_{\theta_{\lambda}}}$ and $\mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}) = \mathcal{J}_{\pi_{\theta_{\lambda}}}$.
+    $\mathcal{E}$ can update $\mathcal{P}_{\Lambda}$ by the Monte-Carlo estimation of $\mathcal{J}_{\pi_{\theta_{\lambda}}}$.
+    $\mathcal{T}$ is to maximize $\mathcal{J}_{\pi_{\theta_{\lambda}}}$, which can be any RL algorithms.
+\end{Example}
+
+\begin{Theorem}[Second-Order Optimization with Superior Improvement]
+    Under assumptions \eqref{asp:1} \eqref{asp:2} \eqref{asp:4}, we have
+    $\textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t+1)}}  [G^{\eta} \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{(t+1)})] 
+    \geq \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t)}}  [G^{\eta} \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{(t+1)})] $, more specifically,
+   \begin{equation*}
+       \begin{aligned}
+               &\textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t+1)}}
+    [\mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{(t+1),\eta}) - \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{(t+1)}) ] \\
+    &\geq \textbf{E}_{\lambda \sim \mathcal{P}_{\Lambda}^{(t)}}
+    [\mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{(t+1),\eta}) - \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}^{(t+1)}) ]
+       \end{aligned}
+   \end{equation*}
+\label{thm:2nd_gdi}
+\end{Theorem}
+
+\begin{Proof}
+    By \textbf{Theorem} \ref{thm:cts_Rp} (see App. \ref{App: proof}), the upper triangular transport inequality,
+    let $f(\lambda) = G^{\eta} \mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda})$ and 
+    $g(\lambda) = \mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda})$,
+    the proof is done.
+\end{Proof}
+
+\begin{Remark}[Superiority of Improvement]
+    \textbf{Theorem} \ref{thm:2nd_gdi} shows that, if $\mathcal{P}_{\Lambda}$ is updated by $\mathcal{E}$, the expected improvement of $\mathcal{T}$ is higher.
+\end{Remark}
+
+
+
+
+
+
+\begin{Example}[Practical Implementation]
+\label{example: GDI meta}
+    Let $\mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}) = \textbf{E}_{s \sim d_{\rho_0}^{\pi}} \textbf{E}_{a \sim \pi(\cdot | s) \exp(\epsilon A^{\pi}(s, \cdot))/Z} [A^{\pi}(s, a)]$, where $\pi = \pi_{\theta_{\lambda}}$.
+    Let $\mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda}) = \mathcal{J}_{\pi_{\theta_{\lambda}}}$.
+    If we optimize $\mathcal{L}_{\mathcal{T}} (\lambda, \theta_{\lambda})$ by natural gradient, 
+    \citep{pgtheory} shows that, for direct parameterization, the natural policy gradient gives $\pi^{(t+1)} \propto \pi^{(t)} \exp (\epsilon A^{\pi^{(t)}})$, by \textbf{Lemma} \ref{lemma:perfdiff} (see App. \ref{App: proof}), the performance difference lemma,
+    $V^{\pi} (s_0) - V^{\pi'} (s_0) = \frac{1}{1 - \gamma} \textbf{E}_{s \sim d_{s_0}^\pi} \textbf{E}_{a \sim \pi (\cdot | s)} [ A^{\pi'} (s, a) ]$, 
+    hence if we ignore the gap between the states visitation distributions of $\pi^{(t)}$ and $\pi^{(t+1)}$, 
+    $\mathcal{L}_{\mathcal{E}} (\lambda, \theta_{\lambda}^{(t)}) \approx \frac{1}{1 - \gamma} \textbf{E}_{s \sim d_{\rho_0}^{\pi}} [V^{\pi^{(t+1)}}(s) - V^{\pi^{(t)}} (s)]$, 
+    where $\pi^{(t)} = \pi_{\theta_{\lambda}^{(t)}}$.
+    Hence, $\mathcal{E}$ is actually putting more measure on $\lambda$ that can achieve more improvement.
+\end{Example}
+
+
+
+\begin{figure*}[!t]
+\subfigure[Performance of Control Groups]{
+\includegraphics[width=0.4\textwidth]{photo/tongjitu/zhuzhuangtu/Ablation_Study/Ablation_Study.pdf}
+}
+\subfigure[t-SNE of GDI-I$^3$]{
+		\includegraphics[width=0.25\textwidth]{photo/TSNE/sq/A.png}
+	}
+	\subfigure[t-SNE of GDI-I$^1$]{
+		\includegraphics[width=0.25\textwidth]{photo/TSNE/sq/B.png}
+	}
+\caption{Figures of ablation study. \textbf{(a)} shows  how   the ablation groups (see App. \ref{Sec: appendix Ablation Study}) perform compared with the baseline (i.e., GDI-I$^3$). Noting that the performance has been normalized by GDI-I$^3$ (e.g., $\frac{\text{Mean HNS of  GDI-I}^1}{\text{Mean HNS of GDI-I}^3}$), and w/o $\mathcal{E}$ means without the meta-controller. \textbf{(b)} and \textbf{(c)} illustrate the  data richness (e.g., $\frac{\text{Seen Conditions}}{\text{All Conditions}}$) of GDI-I$^1$ and GDI-I$^3$ via t-SNE  of visited states (see App. \ref{app: tsne}).}
+\label{fig:ablation study}
+\end{figure*}
+
+\section{Experiment}
+\label{sec: experiment}
+In this section, we designed our experiment to answer the following questions:
+\begin{itemize}
+    \item How to implement RL algorithms based on GDI step by step (see Sec. \ref{sec: Practical Implement Based on GDI})?  Whether the proposed methods can outperform all prior SOTA RL algorithms in both sample efficiency and final performance  (see Tab. \ref{tab:atari_results})?
+    \item How to construct a behavior policy space (see Sec. \ref{sec: Policy Space Construction})? What's the impact of the size of the index set $\Lambda$, namely, whether the data richness can be improved via increasing the capacity and diversity (see Fig. \ref{fig:ablation study})?
+    \item How to design a data distribution optimization operator (e.g., a meta-controller) to tackle the exploration and exploitation trade-off (see Sec. \ref{sec: Practical Implement Based on GDI})? How much performance would be degraded without data distribution optimization, namely no meta-controller (see Fig. \ref{fig:ablation study})?
+\end{itemize}
+
+\subsection{Practical Implementation Based on GDI}
+\label{sec: Practical Implement Based on GDI}
+
+
+\paragraph{Policy Space Construction}
+\label{sec: Policy Space Construction}
+
+To illustrate the effectiveness of GDI, we give two representative practical implementations of GDI, namely GDI-I$^3$ and GDI-H$^3$, the capacity of whose behavior policy space is larger than Agent57.  Let $\Lambda = \{\lambda | \lambda = (\tau_1, \tau_2, \epsilon)\}$.
+The behavior policy belongs to a \emph{soft} entropy policy space including policies ranging from very exploratory to purely exploitative and thereby the optimization of the sampling distribution  of behavior policy $\mathcal{P}_{\Lambda}$ can be reframed into the trade-off between exploration and exploitation.
+We define the behavior policy $\pi_{\theta_{\lambda}}$ as
+\begin{equation}
+\label{equ: soft epsilon policy space}
+    \pi_{\theta_{\lambda}}=\epsilon \cdot \operatorname{Softmax}\left(\frac{A_{\theta_1}}{\tau_{1}}\right)+(1-\epsilon) \cdot \operatorname{Softmax}\left(\frac{A_{\theta_2}}{\tau_{2}}\right)
+\end{equation}
+wherein $\pi_{\theta_{\lambda}}$ constructs a parameterized policy space, and the index set $\Lambda$ is constructed by $\lambda = (\tau_1, \tau_2, \epsilon)$.
+For GDI-I$^3$, $A_{\theta_1}$ and $A_{\theta_2}$ are identical advantage functions \citep{dueling_q}. Namely, they are estimated by an isomorphic family of trainable variables $\theta$.
+The learning policy is also $\pi_{\theta_{\lambda}}$.
+For GDI-H$^3$,  $A_{\theta_1}$ and $A_{\theta_2}$ are different, and they are estimated by two different families of trainable variables (i.e., $\theta_1 \neq \theta_2$).
+Since \textbf{GDI needn't assume $A_{\theta_1}$ and $A_{\theta_2}$ are learned from the same MDP}, we adopt two kinds of reward shaping to learn $A_{\theta_1}$ and $A_{\theta_2}$ respectively, which  can see App. \ref{Sec: appendix hyperparameters}.
+More implementation details see App. \ref{App: Algorithm Pseudocode}.
+
+\paragraph{Data Distribution Optimization Operator} The operator $\mathcal{E}$, which optimizes $\mathcal{P}_{\Lambda}$,  is achieved by Multi-Arm Bandits \citep[MAB]{sutton}, 
+where assumption \eqref{asp:2} holds naturally.
+For more details, can see App. \ref{Sec: appendix MAB}. 
+
+
+\paragraph{Reinforcement Learning  Optimization Operator}  The operator $\mathcal{T}$ is achieved by policy gradient, V-Trace and ReTrace \citep{impala, retrace} (see App. \ref{app: background on RL}), which meets Theorem \ref{thm:1st_gdi} by first-order optimization. 
+
+\subsection{Summary of Results}
+\label{sec: Summary of Results}
+
+
+
+
+
+\paragraph{Experimental Details} Recommended by \citep{agent57,atarihuman}, we construct an evaluation system to highlight the superiority of GDI from multiple levels (see App. \ref{app:Evaluation Metrics for ALE}). Furthermore, to avoid any issues that aggregated metrics may have, App. \ref{appendix: experiment results} provides full learning curves for all games and detailed comparison tables of raw and normalized scores. More details see App. \ref{sec:app Experiment Details}.
+
+\paragraph{Effectiveness of GDI} The aggregated results across games are reported in Tab. \ref{tab:atari_results}. Our agents obtain the highest mean HNS with the minimal training frames, leading to the best learning efficiency. Furthermore, our agents have surpassed 22 human world records within  38 playtime days, which is \textbf{500 times} more efficient than Agent57. Extensive experiments have demonstrated the fact that either GDI-I$^3$ or GDI-H$^3$ could obtain  superhuman performance with remarkable learning efficiency. 
+
+
+\paragraph{Discussion of the Results} Agent57 could obtain the highest median HNS but relatively lower learning efficiency via \textbf{i)} a relatively larger behavior policy space and  a meta-controller \textbf{ii)} intrinsic rewards and nearly unlimited data. However, Agent57 fails to distinguish the value of data and thereby collects many useless/low-value samples.  Other algorithms are struggling to match our performance.
+
+
+
+\subsection{Ablation Study}
+
+
+\paragraph{Ablation Study Design} In the ablation study, we further investigate the effects of several properties of GDI. In the first experiment, we demonstrate the effectiveness of the capacity and diversity control via exploring how different sizes  of the index set of the policy space influence the performance and data richness. In the second experiment, we highlight the effectiveness of data distribution optimization operator $\mathcal{E}$ via ablating $\mathcal{E}$. More details can see App. \ref{Sec: appendix Ablation Study}.
+ 
+
+\paragraph{Effectiveness of Capacity and Diversity Control}
+
+In this experiment, we firstly implement a GDI-I$^1$ algorithm with Boltzmann policy space (i.e., $\pi_{\theta_{\lambda}}=\text{Softmax}(\frac{A}{\tau})$) to explore the impact of the  capacity and diversity control. Then, we explore whether the data richness is indeed improved via a case study of t-SNE of GDI-I$^3$ and GDI-I$^1$. Results are illustrated in Fig. \ref{fig:ablation study}, from which we could find the visited states of GDI-I$^3$ are indeed  richer than GDI-I$^1$, which concludes its better performance. In the same way, the behavior policy space of GDI-I$^3$ is a sub-space (i.e., $\theta_1=\theta_2$) of that of GDI-H$^3$, leading to further performance improvement.
+
+\paragraph{Effectiveness of  Data Distribution Optimization} 
+% \changnan{A fixed lambda may not be enough. A fixed uniform distribution may be better now.} 
+From  Fig. \ref{fig:ablation study}, we could also find that not using a meta-controller (e.g., the index $\lambda$ of behavior policy takes a fixed value) will  dramatically degrade performance, which confirms the effectiveness of the data distribution optimization and echoes the previous theoretical proof.
+
+\section{Conclusion}
+
+
+Simultaneously obtaining superior sample efficiency and  better final performance is an important and challenging problem in RL. In this paper, we present the first attempt to address this problem from  training data distribution control, namely to obtain any desired (e.g., nontrivial) data within \emph{limited} interactions. To tackle this problem, we firstly cast it into a data distribution optimization problem. Then, we handle this problem via \textbf{i)} explicitly modeling and controlling the diversity  of the behavior policies and \textbf{ii)} adaptively tackling the  exploration-exploitation trade-off using meta-learning. After integrating this process into GPI, we surprisingly find a more general framework GDI and then we give an operation-version of recent SOTA algorithms. Under the guidance of GDI, we propose feasible implementations and achieve the superhuman final performance with remarkable learning efficiency within only 38 playtime days.
+
+% However, there are still 35 challenging human world records in ALE that have not been conquered by RL agents, and we will leave them in the following work.
+
+
+\section*{Acknowledgements}
+We are grateful for the careful reading and insightful reviews of meta-reviewers and reviewers.
+
+
+
+% In the unusual situation where you want a paper to appear in the
+% references without citing it in the main text, use \nocite
+\nocite{langley00}
+
+\bibliography{example_paper}
+\bibliographystyle{icml2022}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% APPENDIX
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\appendix
+\onecolumn
+
+
+
+
+\iffalse
+1. 方法的核心部分其实并没有直观的写出策略多样性的定义
+保证讲清楚，讲明了。明确每一个部分的具体内容和实际表现。
+\fi
+
+
+
+
+\section{Summary of Notation and Abbreviation}
+\label{app: Abbreviation and Notation}
+In this section, we briefly summarize some common notations and abbreviations in this paper for the convenience of readers, which are illustrated in Tab. \ref{tab: notation} and Tab. \ref{tab: abbreviation}.
+
+\begin{table}[!hb]
+	\centering
+	\caption{Summary of Notation}
+	\label{tab: notation}
+	\begin{tabular}{|c |c| }
+	    \hline
+		\textbf{Notation} &\textbf{Description}\\
+		\hline
+	    $s$ & state \\
+	    \hline
+	    $a$ & action \\
+	    \hline
+	    $\mathcal{S} $ & set of all states \\
+	    \hline
+	    $\mathcal{A} $ & set of all actions \\
+	    \hline
+	    $\Delta$  & probability simplex \\
+	    \hline
+	    $\mu $ & behavior policy \\
+	    \hline
+	    $\pi $ & target policy \\
+	    \hline
+	    $G_t $ & \makecell[c]{cumulative discounted reward \\ or return at $t$} \\
+	    \hline
+	    $d_{\rho_0}^{\pi}$  & \makecell[c]{the states visitation distribution of $\pi$ \\ with the initial state distribution 
+	    $\rho_0$} \\
+	    \hline
+	    $J_{\pi}$     & \makecell[c]{the expectation of the returns \\ with the states visitation distribution of $\pi$} \\
+	    \hline
+	    $V^{\pi}$ & the state value function of $\pi$\\
+	    \hline
+	    $Q^{\pi}$ &  the state-action value function of $\pi$\\
+	    \hline
+	    $\gamma$ & discount-rate parameter \\
+	    \hline
+	    $\delta_{t}$ & temporal-difference error at $t$\\
+	    \hline
+	    $\Lambda$ & set of indexes  \\
+	    \hline
+	    $\lambda$ & one index in $\Lambda$ \\
+	    \hline
+	    $\mathcal{P}_{\Lambda}$ & one probability measure on $\Lambda$ \\
+	    \hline
+	    $\Theta$  & set of all possible parameter values \\
+	    \hline
+	    $\theta$  & one parameter value in $\Theta$ \\
+	    \hline
+	    $\theta_\lambda$ & \makecell[c]{a subset of $\theta$, indicates \\ the parameter in $\theta$ being used by the index $\lambda$} \\
+	    \hline
+	    $\mathcal{X}$ & set of samples \\
+	    \hline
+	    $x$ & one sample in $\mathcal{X}$ \\
+	    \hline
+	    $\mathcal{D}$ & set of all possible states visitation distributions \\
+	    \hline
+	    $\mathcal{E}$ & the data distribution optimization operator \\
+	    \hline
+	    $\mathcal{T}$ & the RL algorithm optimization operator \\
+	    \hline
+	    $L_{\mathcal{E}}$ & \makecell[c]{the loss function of $\mathcal{E}$ to be maximized, \\ calculated by the samples set $\mathcal{X}$ }\\
+	    \hline
+	    $\mathcal{L}_\mathcal{E}$ & \makecell[c]{expectation of $L_{\mathcal{E}}$, \\ with respect to each sample $x \in \mathcal{X}$} \\
+	    \hline
+	    $L_{\mathcal{T}}$ & \makecell[c]{the loss function of $\mathcal{T}$ to be maximized,\\  calculated by the samples set $\mathcal{X}$} \\
+	    \hline
+	    $\mathcal{L}_\mathcal{T}$ & \makecell[c]{expectation of $L_{\mathcal{T}}$, \\ with respect to each sample $x \in \mathcal{X}$} \\
+		\hline
+	\end{tabular} 
+\end{table}
+
+
+
+
+\begin{table}[!hb]
+	\centering
+	\caption{Summary ofAbbreviation}
+	\label{tab: abbreviation}
+	\begin{tabular}{|c| c|}
+		\hline
+		\textbf{Abbreviation} &\textbf{Description}\\
+		\hline
+		Sec.  & Section \citep{agent57} \\
+		\hline
+		Figs. & Figures \citep{dreamerv2} \\
+		\hline
+		Fig. & Figure \citep{agent57} \\
+		\hline
+		Eq.     & Equation \citep{agent57}\\
+		\hline
+		Tab.    & Table \citep{agent57} \\
+		\hline
+		App.    & Appendix \citep{agent57} \\
+		\hline
+		SOTA & State-of-The-Art \citep{agent57}    \\
+		\hline
+		RL  & Reinforcement Learning \citep{sutton} \\
+		\hline
+		DRL & Deep Reinforcement Learning \citep{sutton} \\
+        \hline
+        GPI & Generalized Policy Iteration \citep{sutton} \\
+        \hline
+        PG  & Policy Gradient \citep{sutton} \\
+        \hline
+        AC  & Actor Critic \citep{sutton} \\
+        % PPO & Proximal Policy Optimization  \citep{ppo}\\
+        \hline
+        ALE & Atari Learning Environment \citep{ale} \\
+        \hline
+        HNS   & Human Normalized Score \citep{ale} \\
+        \hline
+        HWRB & Human World Records Breakthrough \\
+        \hline
+        HWRNS & Human World Records Normalized Score \\
+        \hline
+        SABER & Standardized Atari BEnchmark for RL \citep{atarihuman}\\
+        \hline
+        CHWRNS & Capped Human World Records Normalized Score \\      
+        \hline
+        WLOG   & Without Loss of Generality \\
+        \hline
+        w/o    & Without \\
+		\hline
+	\end{tabular} 
+\end{table}
+
+
+
+\clearpage
+\section{Background on RL}
+\label{app: background on RL}
+
+ The RL problem can be formulated by a Markov decision process \citep[MDP]{howard1960dynamic} defined by the tuple  $\left(\mathcal{S}, \mathcal{A}, p, r, \gamma, \rho_{0}\right)$. 
+ Considering a discounted episodic MDP, the initial state $s_0$ will be sampled from the distribution denoted by $\rho_0(s): \mathcal{S} \rightarrow \Delta(\mathcal{S})$. 
+ At each time t, the agent choose an action $a_t \in \mathcal{A}$ according to the policy $\pi(a_t|s_t): \mathcal{S} \rightarrow \Delta(\mathcal{A})$ at state $s_t \in \mathcal{S}$. 
+ The environment receives the action, produces a reward $r_t \sim r(s,a): \mathcal{S} \times \mathcal{A} \rightarrow \mathbf{R}$ and transfers to the next state $s_{t+1}$  submitted to the transition distribution $p\left(s^{\prime} \mid s, a\right): \mathcal{S} \times \mathcal{A} \rightarrow \Delta(\mathcal{S})$. 
+ The process continues until the agent reaches a terminal state or a maximum time step. 
+ Define return $G_t = \sum_{k=0}^\infty \gamma^k r_{t+k}$, state value function $V^{\pi}(s_t) = \textbf{E}\left[ \sum_{k=0}^\infty \gamma^k r_{t+k} | s_t \right]$, state-action value function $Q^{\pi}(s_t, a_t) = \textbf{E}\left[ \sum_{k=0}^\infty \gamma^k r_{t+k} | s_t, a_t \right]$, and advantage function $A^{\pi}(s_t,a_t) = Q^{\pi}(s_t, a_t) - V^{\pi}(s_t)$, wherein $\gamma \in(0,1)$ is the discount factor.
+The connections between $V^\pi$ and $Q^\pi$ is given by the Bellman equation,
+\begin{equation*}
+    \mathcal{T}Q^{\pi} (s_t, a_t) = \textbf{E}_{'\pi} [r_t + \gamma V^{\pi}(s_{t+1})],
+\end{equation*}
+where
+\begin{equation*}
+    V^{\pi} (s_t)  = \textbf{E}_{\pi} [Q^{\pi} (s_t, a_t)].
+\end{equation*}
+The goal of reinforcement learning is to find the optimal policy $\pi^*$ that maximizes the expected sum of discounted rewards, denoted by $\mathcal{J}$ \citep{sutton}:
+\begin{equation*}
+\pi^{*}=\underset{\pi}{\operatorname{argmax}} \mathcal{J}_{\pi}(\tau) = \underset{\pi}{\operatorname{argmax}} \textbf{E}_{\pi}\left[G_{t}\right]= \underset{\pi}{\operatorname{argmax}} \textbf{E}_{\pi}[\sum_{k=0}^{\infty} \gamma^{k} r_{t+k}]
+\end{equation*}
+
+
+
+% Reinforcement learning algorithms can be divided into off-policy manners \citep{dqn,a3c,sac,impala}and on-policy manners \citep{ppo}. Off-policy algorithms select actions according to a behavior policy $\mu$, which is different from the learned policy $\pi$, which means more diversified data will be collected for policy evolution and thereby ensuring better exploration performance. On the contrary, on-policy manners policy will be evaluated and improved through data sampled using the same policy, which often benefits the stability. Besides reinforcement learning algorithms can also be divided into value-based RL methods \citep{dqn,doubledqn,dueling_q} and policy-based RL methods \citep{ppo,sac,a3c,agent57,coex,apex,discor}. In the value-based RL, agents updated the value function with data collected through a deterministic policy like $\epsilon$-greedy, and the policy evolves through a deterministic rule, which bring more stability at the cost of generalization. In the policy-based RL, agents learns the policy directly, which ensure better generality.
+
+
+Model-free reinforcement learning (MFRL) has made many impressive breakthroughs in a wide range of Markov decision processes  \citep[MDP]{alpha_star,ftw,agent57}.
+MFRL mainly consists of two categories, valued-based methods \citep{dqn,rainbow} and policy-based methods \citep{trpo,ppo,impala}.
+
+Value-based methods learn state-action values and select actions according to these values. 
+One merit of value-based methods is to accurately control the exploration rate of the behavior policies by some trivial mechanism, such like $\epsilon$-greedy.
+The drawback is also apparent. 
+The policy improvement of valued-based methods totally depends on the policy evaluation. 
+Unless the selected action is changed by a more accurate policy evaluation, the policy won't be improved. 
+So the policy improvement of each policy iteration is limited, which leads to a low learning efficiency.
+Previous works equip valued-based methods with many appropriated designed structures, achieving a more promising learning efficiency \citep{dueling_q,priority_q,r2d2}.
+
+
+In practice, value-based methods maximize $\mathcal{J}$ by policy iteration \citep{sutton}. 
+The policy evaluation is fulfilled by minimizing $\textbf{E}_{\pi} [(G - Q^\pi) ^ 2]$, which gives the gradient ascent direction 
+$\textbf{E}_{\pi} [(G - Q^\pi) \nabla Q^\pi]$. 
+% \footnote{The constant $2$ is omitted.} 
+The policy improvement is usually achieved by $\epsilon$-greedy.
+
+Q-learning is a typical value-based methods, which updates the state-action value function $Q(s,a)$ with Bellman Optimality Equation \citep{qlearning}: 
+\begin{equation*}
+    \begin{array}{c}
+    \delta_{t}=r_{t+1}+\gamma \arg \max _{a} Q\left(s_{t+1}, a\right)-Q\left(s_{t}, a_{t}\right) \\
+    Q\left(s_{t}, a_{t}\right) \leftarrow Q\left(s_{t}, a_{t}\right)+\alpha \delta_{t}
+    \end{array}
+\end{equation*}
+wherein $\delta_t$ is the temporal difference error \citep{TDerror}, and $\alpha$ is the learning rate.
+
+A refined structure design of $Q^\pi$ is achieved by \citep{dueling_q}. It estimates $Q^\pi$ by a summation of two separated networks, $Q^\pi = A^\pi + V^\pi$, which has been widely studied in \citep{dueling_q,casa_bridge}.
+
+
+Policy gradient \citep[PG]{williams1992simple} methods is an outstanding representative of policy-based RL algorithms, which directly parameterizes the policy and  updates through optimizing the following objective: 
+\begin{equation*}
+    \mathcal{J} (\theta)=\mathbb{E}_{\pi}\left[\sum_{t=0}^{\infty} \log \pi_{\theta}\left(a_{t} \mid s_{t}\right) R(\tau)\right]
+\end{equation*}
+wherein $R(\tau)$ is the cumulative return on trajectory $\tau$. In PG method, policy improves via ascending  along the gradient of the above equation, denoted as policy gradient:
+\begin{equation*}
+\nabla_{\theta} \mathcal{J} \left(\pi_{\theta}\right) =\underset{\tau \sim \pi_{\theta}}{\mathrm{E}}\left[\sum_{t=0}^{\infty} \nabla_{\theta} \log \pi_{\theta}\left(a_{t} \mid s_{t}\right) R(\tau)\right]
+\end{equation*}
+
+One merit of policy-based methods is that they incorporate a policy improvement phase every training step, suggesting a higher learning efficiency than value-based methods.
+Nevertheless, policy-based methods easily fall into a suboptimal solution, where the entropy drops to $0$ \citep{sac}.
+The actor-critic methods introduce a value function as the baseline to reduce the variance of the policy gradient \citep{a3c}, but maintain the other characteristics unchanged.
+
+Actor-Critic \citep[AC]{sutton} reinforcement learning updates the policy gradient with an value-based critic, which can reduce variance of estimates and thereby ensure  more stable and rapid optimization.
+\begin{equation*}
+    \nabla_{\theta} \mathcal{J}(\theta)=\mathbb{E}_{\pi}\left[\sum_{t=0}^{\infty} \psi_{t} \nabla_{\theta} \log \pi_{\theta}\left(a_{t} \mid s_{t}\right)\right]
+\end{equation*}
+wherein $\psi_{t}$ is the critic to guide the improvement directions of policy improvement, which can be the state-action value function $Q^{\pi}\left(s_{t}, a_{t}\right)$, the advantage function $A^{\pi}\left(s_{t}, a_{t}\right)=Q^{\pi}\left(s_{t}, a_{t}\right)-V^{\pi}(s_t)$.
+
+\subsection{Retrace}
+
+When large scale training is involved, the off-policy problem is inevitable.
+Denote $\mu$ to be the behavior policy, $\pi$ to be the target policy, and $c_t = \min\{\frac{\pi_t}{\mu_t}, \Bar{c}\}$ to be the clipped importance sampling. 
+For brevity, denote $c_{[t: t+k]} = \prod_{i=0}^{k} c_{t+i}$. 
+ReTrace \citep{retrace} estimates $Q(s_t, a_t)$ by clipped per-step importance sampling
+\begin{equation*}
+\label{Equ: retrace}
+    Q^{\Tilde{\pi}} (s_t, a_t) 
+= \textbf{E}_{\mu} [ Q(s_t, a_t) + \sum_{k \geq 0} \gamma^k 
+c_{[t+1:t+k]} \delta^{Q}_{t+k} Q ],
+\end{equation*}
+where $\delta^{Q}_t Q \overset{def}{=} r_t + \gamma Q(s_{t+1}, a_{t+1}) - Q(s_t, a_t)$. 
+The above operator is a contraction mapping, 
+and $Q$ converges to $Q^{\Tilde{\pi}_{ReTrace}}$ that corresponds to some $\Tilde{\pi}_{ReTrace}$.
+
+
+\subsection{Vtrace}
+Policy-based methods maximize $\mathcal{J}$ by policy gradient. 
+It's shown \citep{sutton} that $\nabla \mathcal{J} = \textbf{E}_\pi [G \nabla \log \pi]$. 
+When involved with a baseline, it becomes an actor-critic algorithm such as $\nabla \mathcal{J} = \textbf{E}_\pi [(G - V^\pi) \nabla \log \pi]$, where $V^\pi$ is optimized by minimizing $\textbf{E}_\pi [(G - V^\pi)^2]$, i.e. gradient ascent direction $\textbf{E}_\pi [(G - V^\pi)\nabla V^\pi]$.
+
+IMPALA \citep{impala} introduces V-Trace off-policy actor-critic algorithm to correct for the discrepancy between target policy and behavior policy. Denote $\rho_t = \min\{\frac{\pi_t}{\mu_t}, \Bar{\rho} \}$. V-Trace estimates $V(s_t)$ by
+\begin{equation*}
+\label{Equ: vtrace}
+    V^{\Tilde{\pi}} (s_t) 
+        = \textbf{E}_{\mu} [ 
+        V(s_t) + \sum_{k \geq 0} \gamma^k 
+     c_{[t:t+k-1]} \rho_{t+k}  \delta^{V}_{t+k} V ],
+\end{equation*}
+where $\delta^{V}_t V \overset{def}{=} r_t + \gamma V(s_{t+1}) - V(s_t)$. 
+If $\Bar{c} \leq \Bar{\rho}$, the above operator is a contraction mapping, and $V$ converges to $V^{\Tilde{\pi}}$ that corresponds to 
+$$
+        \Tilde{\pi}(a|s) = \frac
+        {\min \left\{\Bar{\rho} \mu (a|s), \pi(a|s)\right\}}
+        {\sum_{b \in \mathcal{A}}\min \left\{\Bar{\rho} \mu (b|s), \pi(b|s)\right\}}.
+$$
+The policy gradient is given by
+$$
+\textbf{E}_\mu \left[\rho_t (r_t + \gamma V^{\Tilde{\pi}}(s_{t+1}) - V(s_t)) \nabla \log \pi \right].
+$$
+
+\clearpage
+
+
+
+
+
+\section{Algorithm Pseudocode}
+\label{App: Algorithm Pseudocode}
+
+\subsection{GDI-I$^3$}
+In this section, we provide the implementation pseudocode of GDI-I$^3$, which is shown in \textbf{Algorithm} \ref{alg:i3}.
+
+\begin{equation}
+\label{Equ: i3 casa equ}
+    \left\{
+    \begin{aligned}
+        &A=A_{\theta}\left(s_{t}\right),& 
+        &V=V_{\theta}\left(s_{t}\right), \\
+        &\bar{A}=A-E_{\pi}[A],& 
+        &Q=\bar{A}+V. \\
+    \end{aligned}
+    \right.
+\end{equation}
+
+\begin{equation}
+\label{Equ: i3 soft entropy}
+    \lambda = (\tau_1, \tau_2, \epsilon), \ 
+    \pi_{\theta_{\lambda}}=\epsilon \cdot \underbrace{\operatorname{Softmax}\left(\frac{A}{\tau_{1}}\right)}_{Exploration}+(1-\epsilon) \cdot \underbrace{\operatorname{Softmax}\left(\frac{A}{\tau_{2}}\right)}_{Exploitation}
+\end{equation}
+
+
+\begin{figure}[ht]
+  \centering
+  \begin{minipage}{.7\linewidth}
+    \begin{algorithm}[H]
+      \caption{GDI-I$^3$ Algorithm.}  
+          \begin{algorithmic}
+            \STATE Initialize Parameter Server (PS) and Data Collector (DC).
+            \STATE
+            \STATE // LEARNER
+            \STATE Initialize $d_{push}$.
+            \STATE Initialize $\theta$ as Eq. \eqref{Equ: i3 casa equ} and \eqref{Equ: i3 soft entropy}.
+            \STATE Initialize $count = 0$.
+            \WHILE{$True$}
+                \STATE Load data from DC.
+                \STATE Estimate $qs$ and $vs$ by proper off-policy algorithms.
+                \STATE \ \ \ \ (For instance, ReTrace \eqref{Equ: retrace} for $qs$ and V-Trace \eqref{Equ: vtrace} for $vs$.)
+                \STATE Update $\theta$ via policy gradient and policy evaluation.
+                \IF{$count$ mod $d_{push}$ = 0}
+                    \STATE Push $\theta$ to PS.
+                \ENDIF
+                \STATE $count \leftarrow count + 1$.
+            \ENDWHILE
+            \STATE
+            \STATE // ACTOR
+            \STATE Initialize $d_{pull}$, $M$.
+            \STATE Initialize $\theta$ as Eq. \eqref{Equ: i3 casa equ} and \eqref{Equ: i3 soft entropy}.
+            \STATE Initialize $\{\mathcal{B}_m\}_{m=1,...,M}$ and sample $\lambda$ as in \textbf{Algorithm} \ref{alg:bva}.
+            \STATE Initialize $count = 0$, $G = 0$.
+            \WHILE{$True$}
+                \STATE Calculate $\pi_{\theta_{\lambda}}(\cdot | s)$.
+                \STATE Sample $a \sim \pi_{\theta_{\lambda}}(\cdot | s)$.
+                \STATE $s, r, done \sim p(\cdot | s, a)$.
+                \STATE $G \leftarrow G + r$.
+                \IF{$done$}
+                    \STATE Update $\{\mathcal{B}_m\}_{m=1,...,M}$ with $(\lambda, G)$ as in \textbf{Algorithm} \ref{alg:bva}.
+                    \STATE Send data to DC and reset the environment.
+                    \STATE $G \leftarrow 0$.
+                    \STATE Sample $\lambda$ as in \textbf{Algorithm} \ref{alg:bva}
+                \ENDIF
+                \IF{$count \mod d_{pull}$ = 0}
+                    \STATE Pull $\theta$ from PS and update $\theta$.
+                \ENDIF
+                \STATE $count \leftarrow count + 1$.
+            \ENDWHILE
+          \end{algorithmic}
+        \label{alg:i3}
+    \end{algorithm}
+  \end{minipage}
+\end{figure}
+
+\clearpage
+\subsection{GDI-H$^3$}
+In this section, we provide the implementation pseudocode of GDI-H$^3$, which is shown in \textbf{Algorithm} \ref{alg:h3}.
+
+\begin{equation}
+\label{Equ: h3 casa equ}
+    \begin{aligned}
+    \left\{
+    \begin{aligned}
+        &A_{\theta_1}=A_{\theta_1}\left(s_{t}\right),& 
+        &V_{\theta_1}=V_{\theta_1}\left(s_{t}\right), \\
+        &\bar{A}_{\theta_1}=A_{\theta_1}-E_{\pi}[A_{\theta_1}],& 
+        &Q_{\theta_1}=\bar{A}_{\theta_1}+V_{\theta_1}. \\
+    \end{aligned}
+    \right.\\
+    \left\{
+    \begin{aligned}
+        &A_{\theta_2}=A_{\theta_2}\left(s_{t}\right),& 
+        &V_{\theta_2}=V_{\theta_2}\left(s_{t}\right), \\
+        &\bar{A}_{\theta_2}=A_{\theta_2}-E_{\pi}[A_{\theta_2}],& 
+        &Q_{\theta_2}=\bar{A}_{\theta_2}+V_{\theta_2}. \\
+    \end{aligned}
+    \right.
+    \end{aligned}
+\end{equation}
+
+\begin{equation}
+\label{Equ: h3 soft entropy}
+    \lambda = (\tau_1, \tau_2, \epsilon), \ 
+    \pi_{\theta_{\lambda}}=\epsilon \cdot \operatorname{Softmax}\left(\frac{A_{\theta_1}}{\tau_{1}}\right)+(1-\epsilon) \cdot \operatorname{Softmax}\left(\frac{A_{\theta_2}}{\tau_{2}}\right)
+\end{equation}
+
+
+\begin{figure}[ht]
+  \centering
+  \begin{minipage}{.7\linewidth}
+    \begin{algorithm}[H]
+      \caption{GDI-H$^3$ Algorithm.}  
+          \begin{algorithmic}
+            \STATE Initialize Parameter Server (PS) and Data Collector (DC).
+            \STATE
+            \STATE // LEARNER
+            \STATE Initialize $d_{push}$.
+            \STATE Initialize $\theta$  as Eq. \eqref{Equ: h3 casa equ} and \eqref{Equ: h3 soft entropy}.
+            \STATE Initialize $count = 0$.
+            \WHILE{$True$}
+                \STATE Load data from DC.
+                \STATE Estimate $qs_1, qs_2$ and $vs_1, vs_2$ by proper off-policy algorithms.
+                \STATE \ \ \ \ (For instance, ReTrace \eqref{Equ: retrace} for $qs1, qs_2$ and V-Trace \eqref{Equ: vtrace} for $vs_1, vs_2$.)
+                \STATE Update $\theta_1, \theta_2$ via policy gradient and policy evaluation, respectively.
+                \IF{$count$ mod $d_{push}$ = 0}
+                    \STATE Push $\theta_1, \theta_2$ to PS.
+                \ENDIF
+                \STATE $count \leftarrow count + 1$.
+            \ENDWHILE
+            \STATE
+            \STATE // ACTOR
+            \STATE Initialize $d_{pull}$, $M$.
+            \STATE Initialize $\theta_1, \theta_2$ as Eq. \eqref{Equ: h3 casa equ} and \eqref{Equ: h3 soft entropy}.
+            \STATE Initialize $\{\mathcal{B}_m\}_{m=1,...,M}$ and sample $\lambda$ as in \textbf{Algorithm} \ref{alg:bva}.
+            \STATE Initialize $count = 0$, $G = 0$.
+            \WHILE{$True$}
+                \STATE Calculate $\pi_{\theta_{\lambda}}(\cdot | s)$.
+                \STATE Sample $a \sim \pi_{\theta_{\lambda}}(\cdot | s)$.
+                \STATE $s, r, done \sim p(\cdot | s, a)$.
+                \STATE $G \leftarrow G + r$.
+                \IF{$done$}
+                    \STATE Update $\{\mathcal{B}_m\}_{m=1,...,M}$ with $(\lambda, G)$ as in \textbf{Algorithm} \ref{alg:bva}.
+                    \STATE Send data to DC and reset the environment.
+                    \STATE $G \leftarrow 0$.
+                    \STATE Sample $\lambda$ as in \textbf{Algorithm} \ref{alg:bva}
+                \ENDIF
+                \IF{$count \mod d_{pull}$ = 0}
+                    \STATE Pull $\theta$ from PS and update $\theta$.
+                \ENDIF
+                \STATE $count \leftarrow count + 1$.
+            \ENDWHILE
+          \end{algorithmic}
+        \label{alg:h3}
+    \end{algorithm}
+  \end{minipage}
+\end{figure}
+
+\clearpage
+
+\section{Adaptive Controller Formalism}
+\label{Sec: appendix MAB}
+
+In practice, we use a Bandits Controller (BC) to control the behavior sampling distribution adaptively, which has been widely used in prior works \citep{agent57,casa_entropy}. More details on Bandits  can see \citep{sutton}. The whole algorithm is shown in \textbf{Algorithm} \ref{alg:bva}. As the behavior policy can be parameterized and thereby sampling behaviors from the policy space is equivalent to sampling indexes $x$ from the index set. 
+
+Let's firstly define a bandit as $B = Bandit(mode, l, r, lr, d, acc, ta, to, \textbf{w}, \textbf{N})$.
+\begin{itemize}
+    \item $mode$ is the mode of sampling, with two choices, $argmax$ and $random$, wherein $argmax$ greedily chooses the behaviors with top estimated value from the policy space, and $random$ samples behaviors according to a distribution calculated by $Softmax(V)$.
+    \item $l$ is the left boundary of the index set, and each $x$ is clipped to $x = \max \{x, l\}$.
+    \item $r$ is the right boundary of the index set, and each $x$ is clipped to $x = \min \{x, r\}$.
+    \item $acc$ is the accuracy of space to be optimized, where each $x$ is located in the $\lfloor (\min\{\max\{x, l\}, r\} - l) / acc \rfloor$th block.
+    \item tile coding is a representation method of continuous space \citep{sutton}, and each kind of tile coding can be uniquely determined by $l$, $r$, $to$ and $ta$, wherein $to$ represents the tile offset and $ta$ represents the accuracy of the tile coding.
+    \item $to$ is the offset of each tile coding, which represents the relative offset of the basic coordinate system (normally we select the space to be optimized as basic coordinate system).
+    \item $ta$ is the accuracy of each tile coding, where each $x$ is located in the $\lfloor (\min\{\max\{x-to, l\}, r\} - l) / ta \rfloor$th tile.
+    \item $M_{btt}$ represents block-to-tile, which is a mapping from the block of the original space to the tile coding space.
+    \item $M_{ttb}$ represents tile-to-block, which is a mapping from the tile coding space to the block of the original space.
+    \item $\textbf{w}$ is a vector in $\mathbf{R}^{\lfloor (r-l) / ta \rfloor}$, which represents the weight of each tile.
+    \item $\textbf{N}$ is a vector in $\mathbf{R}^{\lfloor (r-l) / ta \rfloor}$, which counts the number of sampling of each tile.
+    \item $lr$ is the learning rate.
+    \item $d$ is an integer, which represents how many candidates is provided by each bandit when sampling.
+\end{itemize}
+
+During the evaluation process, we evaluate the value of the $i$th tile by
+\begin{equation}
+\label{eq:bandit_eval}
+V_i = \frac{\sum_{k}^{M_{btt}(block_i)} \textbf{w}_k}{len(M_{btt}(block_i))}
+\end{equation}
+
+
+
+During the training process, for each sample $(x, g)$, where $g$ is the target value. Since $x$ locates in the $j$th tile of $k$th tile\_coding, we update $B$ by
+\begin{equation}
+\label{eq:bandit_update}
+\left\{
+\begin{aligned}
+&j = \lfloor (\min\{\max\{x-to_{k}, l\}, r\} - l) / ta_{k} \rfloor, \\
+&\textbf{w}_j 
+\leftarrow \textbf{w}_j + lr * \left(g - V_i\right)\\
+& \textbf{N}_j \leftarrow \textbf{N}_j + 1
+\end{aligned}
+\right.
+\end{equation}
+
+During the sampling process, we firstly evaluate $\mathcal{B}$ by \eqref{eq:bandit_eval} and get $(V_1, ..., V_{\lfloor (r-l) / acc \rfloor})$.
+We calculate the score of $i$th tile by
+\begin{equation}
+\label{eq:bandit_score}
+score_i = \frac{V_i - \mu(\{V_j\}_{j=1,...,\lfloor(r-l)/acc\rfloor})}{\sigma(\{V_j\}_{j=1,...,\lfloor(r-l)/acc\rfloor})} + c \cdot \sqrt{\frac{\log (1 + \sum_j \textbf{N}_j)}{1 + \textbf{N}_i}}.
+\end{equation}
+For different $mode$s, we sample the candidates by the following mechanism,
+\begin{itemize}
+    \item if $mode$ = $argmax$, find blocks with top-$d$ $score$s, then sample $d$ candidates from these blocks, one uniformly from a block;
+    \item if $mode$ = $random$, sample $d$ blocks with $score$s as the logits without replacement, then sample $d$ candidates from these blocks, one uniformly from a block;
+\end{itemize}
+
+In practice, we define a set of bandits $\mathcal{B}_m = \{B_m\}_{m=1,...,M}$.
+At each step, we sample $d$ candidates $\{c_{m, i}\}_{i=1,...,d}$ from each $B_m$, so we have a set of $m \times d$ candidates $\{c_{m, i}\}_{m=1,...,M; i=1,...,d}$.
+Then we sample uniformly from these $m \times d$ candidates to get $x$. 
+At last, we transform the selected $x$ to $\alpha=\{\tau_1,\tau_2,\epsilon\}$ by $\tau_{1,2} = \frac{1}{\exp (x_{1,2}) - 1}$ and $\epsilon = x_{3}$
+When we receive $(\alpha, g)$, we transform $\alpha$ to $x$ by $x_{1,2} = \log (1 + 1 / \tau_{1,2})$, and  $x_{3} = \epsilon$.
+Then we update each $B_m$ by \eqref{eq:bandit_update}.
+
+
+
+\begin{figure}[ht]
+  \centering
+  \begin{minipage}{.9\linewidth}
+    \begin{algorithm}[H]
+      \caption{Bandits Controller}  
+          \begin{algorithmic}
+            \FOR{$m=1,...,M$}
+                \STATE Sample $mode \sim \{argmax, random\}$ and other initialization parameters
+                \STATE Initialize $B_m = Bandit(mode, l, r, lr, d, acc, to, ta, \textbf{w}, \textbf{N})$
+                \STATE Ensemble $B_m$ to constitute $\mathcal{B}_m$ 
+            \ENDFOR
+            \WHILE{$True$}  
+                \FOR{$m=1,...,M$}
+                    \STATE Evaluate $\mathcal{B}_m$ by \eqref{eq:bandit_eval}.
+                    \STATE Sample candidates $c_{m, 1}, ..., c_{m, d}$  from $\mathcal{B}_m$ via \eqref{eq:bandit_score} following its $mode$.
+                \ENDFOR
+                \STATE Sample $x$ from $\{c_{m, i}\}_{m=1,...,M; i=1,...,d}$.
+                \STATE Execute $x$ and receive the return $G$.
+                \FOR{$m=1,...,M$}
+                    \STATE Update $\mathcal{B}_m$ with $(x, G)$ by \eqref{eq:bandit_update}.
+                \ENDFOR
+            \ENDWHILE
+          \end{algorithmic}  
+        \label{alg:bva}
+    \end{algorithm}
+  \end{minipage}
+\end{figure}
+
+
+\clearpage
+
+
+\section{Experiment Details}
+\label{sec:app Experiment Details}
+
+The overall training architecture is on the top of the Learner-Actor  framework \citep{impala}, which supports large-scale training. Additionally, the recurrent encoder with LSTM \citep{lstm} is used to handle the partially observable MDP problem \citep{ale}. 
+The burn-in technique is adopted to deal with the representational drift \citep{r2d2}, and we train each sample twice.
+A complete description of the hyperparameters  can see App. \ref{Sec: appendix hyperparameters}. 
+We employ additional environments to evaluate the scores during training, and the undiscounted episode returns averaged over 32 environments with different seeds have been recorded. 
+Details on relevant evaluation criteria  can see App. \ref{app:Evaluation Metrics for ALE}.
+ 
+We evaluated all agents on 57 Atari 2600 games from the arcade learning environment  \citep[ALE]{ale} by recording the average score of the population of agents during training. We have demonstrated our evaluation metrics for ALE in App. \ref{app:Evaluation Metrics for ALE}, and we will describe more details in the following. Besides, all the experiment is accomplished using a single CPU with 92 cores and a single Tesla-V100-SXM2-32GB GPU.
+
+Noting that episodes will be truncated at 100K frames (or 30 minutes of simulated play) as other baseline algorithms \citep{rainbow,agent57,laser,ngu,r2d2} and thereby we calculate the mean playtime over 57 games which is called Playtime. In addition to comparing the mean and median human normalized scores (HNS), we also report the performance based on human world records among these algorithms and the related learning efficiency to further highlight the significance of our algorithm. Inspired by \citep{atarihuman}, human world records normalized score (HWRNS) and SABER are  better descriptors for evaluating algorithms on human top level on Atari games, which simultaneously give rise to more challenges and lead the related research into a new journey to train the superhuman agent instead of  just paying attention to  the human average level. 
+
+
+\clearpage
+\section{Hyperparameters}
+\label{Sec: appendix hyperparameters}
+
+In this section, we firstly detail the hyperparameters we use to pre-process the environment frames received from the Arcade Learning Environment. The hyperparameters that we used in all experiments are almost the same as Agent57  \citep{agent57}, NGU \citep{ngu}, MuZero \citep{muzero} and R2D2 \citep{r2d2}.
+In Tab. \ref{tab:ale_process}, we detail these pre-processing hyperparameters. Then we will detail the hyperparameters we used for Atari experiments, which is demonstrated in Tab. \ref{tab:fixed_model_hyperparameters_atari}. 
+
+\begin{table}[H]
+\begin{center}
+\caption{Atari pre-processing hyperparameters.}
+\label{tab:ale_process}
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value}  \\
+\hline
+Random modes and difficulties & No \\
+\hline
+Sticky action probability  & 0.0 \\
+\hline
+Life information & Not allowed \\
+\hline
+Image Size & (84, 84) \\
+\hline
+Num. Action Repeats & 4 \\
+\hline
+Num. Frame Stacks & 4 \\
+\hline
+Action Space & Full \\
+\hline
+% End of Episode When Life Lost & No \\
+Max episode length   & 100000 \\
+\hline
+Random noops range  & 30\\
+\hline
+Grayscaled/RGB      & Grayscaled\\
+\hline
+\end{tabular}
+
+\end{center}
+\end{table}
+\clearpage
+
+\begin{table}[H]
+\begin{center}
+\caption{Hyperparameters for Atari experiments.}
+\label{tab:fixed_model_hyperparameters_atari}
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Parameter} & \textbf{Value}  \\
+\hline
+Num. Frames & 200M (2E+8) \\
+\hline
+Replay & 2 \\
+\hline
+Num. Environments & 160 \\
+\hline
+GDI-I$^3$ Reward Shape & $\log (abs (r) + 1.0) \cdot (2 \cdot 1_{\{r \geq 0\}} - 1_{\{r < 0\}})$ \\
+\hline
+GDI-H$^3$ Reward Shape 1 & $\log (abs (r) + 1.0) \cdot (2 \cdot 1_{\{r \geq 0\}} - 1_{\{r < 0\}})$ \\
+\hline
+GDI-H$^3$ Reward Shape 2 & $sign(r) \cdot ((abs (r) + 1.0)^{0.25} - 1.0) + 0.001 \cdot r$ \\
+\hline
+Reward Clip & No \\
+\hline
+Intrinsic Reward & No \\
+\hline
+Entropy Regularization & No \\
+\hline
+Burn-in & 40 \\
+\hline
+Seq-length & 80 \\
+\hline
+Burn-in Stored Recurrent State & Yes \\
+\hline
+Bootstrap & Yes \\
+\hline
+Batch size & 64 \\
+\hline
+Discount ($\gamma$) & 0.997 \\
+\hline
+$V$-loss Scaling ($\xi$) & 1.0 \\
+\hline
+$Q$-loss Scaling ($\alpha$) & 10.0 \\
+\hline
+$\pi$-loss Scaling ($\beta$) & 10.0 \\
+\hline
+Importance Sampling Clip $\Bar{c}$ & 1.05 \\
+\hline
+Importance Sampling Clip $\Bar{\rho}$ & 1.05 \\
+\hline
+Backbone & IMPALA,deep \\
+\hline
+LSTM Units & 256 \\
+\hline
+Optimizer & Adam Weight Decay \\
+\hline
+Weight Decay Rate & 0.01 \\
+\hline
+Weight Decay Schedule & Anneal linearly to 0 \\
+\hline
+Learning Rate & 5e-4 \\
+\hline
+Warmup Steps & 4000 \\
+\hline
+Learning Rate Schedule & Anneal linearly to 0 \\
+\hline
+AdamW $\beta_1$ & 0.9 \\
+\hline
+AdamW $\beta_2$ & 0.98 \\
+\hline
+AdamW $\epsilon$ & 1e-6 \\
+\hline
+AdamW Clip Norm & 50.0 \\
+\hline
+Auxiliary Forward Dynamic Task & Yes \\
+\hline
+Auxiliary Inverse Dynamic Task & Yes \\
+\hline
+Learner Push Model Every $N$ Steps & 25 \\
+\hline
+Actor Pull Model Every $N$ Steps & 64 \\
+\hline
+Num. Bandits & 7 \\
+\hline
+Bandit Learning Rate & Uniform([0.05, 0.1, 0.2]) \\
+\hline
+Bandit Tiling Width & Uniform([2, 3, 4]) \\
+\hline
+Num. Bandit Candidates & 3 \\
+\hline
+Offset of Tile coding & Uniform([0, 60]) \\
+\hline
+Accuracy of Tile coding & Uniform([2, 3, 4]) \\
+\hline
+Accuracy of Search Range for [$1/\tau_1$,$1/\tau_2$,$\epsilon$]& [1.0, 1.0, 0.1]\\
+\hline
+Fixed Selection for [$1/\tau_1$,$1/\tau_2$,$\epsilon$]&[1.0,0.0,1.0]\\
+\hline
+Bandit Search Range for $1/\tau_1$ & [0.0, 50.0] \\
+\hline
+Bandit Search Range for $1/\tau_2$ & [0.0, 50.0] \\
+\hline
+Bandit Search Range for $\epsilon$ & [0.0, 1.0] \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+% \end{multicols}
+\clearpage
+

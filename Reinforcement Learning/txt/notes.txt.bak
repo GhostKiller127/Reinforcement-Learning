@@ -1,0 +1,28 @@
+training plots:
+combined loss (1,2)
+V-loss (1,2)
+Q-loss (1,2)
+π-loss (1,2)
+average performance (real or not?)
+
+validation plots:
+index evaluation average 
+bandits average evaluation performance
+[argmax performance (1,2,1+2)]
+
+use old code to generate newer one
+use old versions to merge with specified functionalities
+
+structure:
+config file [parameters for environments]
+parameter server
+data collector
+actor class [FF & transformer]
+learner class
+bandit class
+- environment class [gym & crypto] [use documentation URL]
+
+algorithm/training class
+models
+runs
+
