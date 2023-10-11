@@ -14,10 +14,14 @@ use old code to generate newer one
 use old versions to merge with specified functionalities
 
 structure:
-config file [parameters for environments]
-parameter server
-data collector
-actor class [FF & transformer]
+config file (parameters for environments)
+[parameter server] (is just saved weights on ssd)
+[data collector] (implement temporary data)
+[architectures]
+actor class
+    load architecture according to config
+    load_weights function
+    get_action function (CASA & use bandit_values)
 learner class
 [bandit class]
 algorithm/training class

@@ -24,6 +24,12 @@ config_params = {
         "adamw_clip_norm": 50.0,
         "learner_push_model_every_n_steps": 25,
         "actor_pull_model_every_n_steps": 64,
+        "architecture_params": {
+            "architecture": "dense",
+            "input_dim": 6,
+            "hidden_dim": 128,
+            "action_dim": 3
+        },
         "bandit_params": {
             "mode": ["argmax", "random"],
             "tau1": [0.0, 50.0],
