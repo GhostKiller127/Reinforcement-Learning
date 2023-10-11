@@ -1,3 +1,5 @@
+nuScenes
+
 Binance/Data
 Binance/Evaluation
 Binance/Figures
@@ -9,8 +11,9 @@ Binance RL/Data
 Binance RL/Models
 Binance RL/runs
 
-Reinforcement Learning/src/__pycache__
+Reinforcement Learning/docs
 Reinforcement Learning/runs
+Reinforcement Learning/src/__pycache__
 Reinforcement Learning/Laser Hockey/intermediate project/models
 Reinforcement Learning/Laser Hockey/intermediate project/models recent
 Reinforcement Learning/Laser Hockey/laser-hockey-env/agents

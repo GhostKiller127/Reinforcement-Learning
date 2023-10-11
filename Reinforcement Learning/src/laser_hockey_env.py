@@ -99,6 +99,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.world_objects = []
         self.drawlist = []
         self.done = False
+        self.truncated = False
         self.winner = 0
         self.one_starts = True # player one starts the game (alternating)
 
@@ -341,6 +342,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
         self.done = False
+        self.truncated = False
         self.winner = 0
         self.prev_shaping = None
         self.time = 0
@@ -400,8 +402,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.drawlist.extend([self.player1, self.player2, self.puck])
 
         obs = self._get_obs()
+        info = self._get_info()
 
-        return obs
+        return obs, info
 
     def _apply_action_with_max_speed(self, player, action, max_speed, is_player_one):
         velocity = np.asarray(player.linearVelocity)
@@ -508,9 +511,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             if self.winner == 0: # tie
                 r += 0
             elif self.winner == 1: # you won
-                r += 10
+                r += 1
             else: # opponent won
-                r -= 10
+                r -= 1
 
         return r
 
@@ -566,7 +569,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         obs = self._get_obs()
         if self.time >=self.max_timesteps:
-            self.done = True
+            self.truncated = True
 
         reward = self._compute_reward()
         info = self._get_info()
@@ -574,7 +577,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W,H/2)))
         self.time += 1
-        return obs, reward, self.done, info
+        return obs, reward, self.done, self.truncated, info
 
     def render(self, mode='human'):
         from gymnasium.envs.classic_control import rendering
@@ -709,9 +712,6 @@ class HumanOpponent():
         self.a_down = 0
         self.a_clockwise = 0
         self.a_anticlockwise = 0
-
-        if env.viewer is None:
-            env.render()
             
         
     def key_press(self, symbol, mod):
@@ -724,12 +724,12 @@ class HumanOpponent():
             if symbol == key.G: self.a_anticlockwise = 1
         
         if self.player == 2:
-            if symbol == key.LEFT: self.a_right = 1
-            if symbol == key.RIGHT: self.a_left = 1
-            if symbol == key.UP: self.a_down = 1
-            if symbol == key.DOWN: self.a_up = 1
-            if symbol == key.O: self.a_clockwise = 1
-            if symbol == key.P: self.a_anticlockwise = 1
+            if symbol == key.NUM_1: self.a_right = 1
+            if symbol == key.NUM_3: self.a_left = 1
+            if symbol == key.NUM_5: self.a_down = 1
+            if symbol == key.NUM_2: self.a_up = 1
+            if symbol == key.RIGHT: self.a_clockwise = 1
+            if symbol == key.LEFT: self.a_anticlockwise = 1
     
     
     def key_release(self, symbol, mod):
@@ -742,12 +742,12 @@ class HumanOpponent():
             if symbol == key.G: self.a_anticlockwise = 0
 
         if self.player == 2:
-            if symbol == key.LEFT: self.a_right = 0
-            if symbol == key.RIGHT: self.a_left = 0
-            if symbol == key.UP: self.a_down = 0
-            if symbol == key.DOWN: self.a_up = 0
-            if symbol == key.O: self.a_clockwise = 0
-            if symbol == key.P: self.a_anticlockwise = 0
+            if symbol == key.NUM_1: self.a_right = 0
+            if symbol == key.NUM_3: self.a_left = 0
+            if symbol == key.NUM_5: self.a_down = 0
+            if symbol == key.NUM_2: self.a_up = 0
+            if symbol == key.RIGHT: self.a_clockwise = 0
+            if symbol == key.LEFT: self.a_anticlockwise = 0
 
     
     def act(self, obs):

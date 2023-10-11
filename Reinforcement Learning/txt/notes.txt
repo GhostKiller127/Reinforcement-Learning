@@ -20,7 +20,6 @@ data collector
 actor class [FF & transformer]
 learner class
 [bandit class]
-
 algorithm/training class
 models
 runs

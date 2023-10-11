@@ -1,1 +1,1 @@
-tensorboard --logdir "runs/REINFORCE
+tensorboard --logdir runs/REINFORCE
