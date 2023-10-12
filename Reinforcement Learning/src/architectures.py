@@ -24,7 +24,6 @@ class DenseModel(nn.Module):
         return v, a
 
 
-'''
 class TransformerModel(nn.Module):
     def __init__(self, config, device):
         super().__init__()
@@ -54,4 +53,3 @@ class TransformerModel(nn.Module):
             out = self.layers[f'l{i}'](out, self.src_mask[:s.size()[s.dim()-2],:s.size()[s.dim()-2]])
         out = self.layers['p'](out)
         return out
-'''

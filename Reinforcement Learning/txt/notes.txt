@@ -13,18 +13,23 @@ bandits average evaluation performance
 use old code to generate newer one
 use old versions to merge with specified functionalities
 
-structure:
-config file (parameters for environments)
+src structure:
+config file
 [parameter server] (is just saved weights on ssd)
-[data collector] (implement temporary data)
-[architectures]
-actor class
-    load architecture according to config
-    load_weights function
-    get_action function (CASA & use bandit_values)
+data collector
+    global data
+    temporary data
+architectures
+    [dense]
+    transformer
+[actor class]
 learner class
 [bandit class]
-algorithm/training class
-models
-runs
+training class
+metrics
+    get from data collector
+    get from learner
+    get from environment?
+    get from actor?
+    get from bandit?
 
