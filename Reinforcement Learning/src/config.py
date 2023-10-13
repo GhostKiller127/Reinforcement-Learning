@@ -1,10 +1,10 @@
 config_params = {
-    "Acrobot-v1": {
+    "CartPole-v1": {
         "replay": 2,
-        "num_envs": 160,
-        "seq_length": 40,
-        "bootstrap": 5,
+        "num_envs": 2,
         "batch_size": 64,
+        "sequence_length": 5,
+        "bootstrap_length": 5,
         "discount": 0.997,
         "v_loss_scaling": 1.0,
         "q_loss_scaling": 10.0,
@@ -23,9 +23,9 @@ config_params = {
         "actor_pull_model_every_n_steps": 64,
         "architecture_params": {
             "architecture": "dense",
-            "input_dim": 6,
+            "input_dim": 4,
             "hidden_dim": 128,
-            "action_dim": 3},
+            "action_dim": 2},
         "bandit_params": {
             "mode": ["argmax", "random"],
             "tau1": [0.0, 50.0],
@@ -37,17 +37,39 @@ config_params = {
             "lr": [0.05, 0.1, 0.2],
             "d": 3}
     },
-    "CartPole-v1": {
-        # Add hyperparameters for CartPole-v1 environment here
-    },
-    "MountainCar-v0": {
-        # Add hyperparameters for MountainCar-v0 environment here
-    },
     "LunarLander-v2": {
-        # Add hyperparameters for LunarLander-v2 environment here
+        "architecture_params": {
+            "architecture": "dense",
+            "input_dim": 8,
+            "hidden_dim": 128,
+            "action_dim": 4},
+        "bandit_params": {
+            "mode": ["argmax", "random"],
+            "tau1": [0.0, 50.0],
+            "tau2": [0.0, 50.0],
+            "epsilon": [0.0, 1.0],
+            "acc": [50, 50, 10],
+            "acc2": [2, 3, 4],
+            "width": [2, 3, 4],
+            "lr": [0.05, 0.1, 0.2],
+            "d": 3}
     },
     "LaserHockey-v0": {
-        # Add hyperparameters for LaserHockey-v0 environment here
+        "architecture_params": {
+            "architecture": "dense",
+            "input_dim": 16,
+            "hidden_dim": 128,
+            "action_dim": 4},
+        "bandit_params": {
+            "mode": ["argmax", "random"],
+            "tau1": [0.0, 50.0],
+            "tau2": [0.0, 50.0],
+            "epsilon": [0.0, 1.0],
+            "acc": [50, 50, 10],
+            "acc2": [2, 3, 4],
+            "width": [2, 3, 4],
+            "lr": [0.05, 0.1, 0.2],
+            "d": 3}
     },
     "Crypto-v0": {
         # Add hyperparameters for Crypto-v0 environment here

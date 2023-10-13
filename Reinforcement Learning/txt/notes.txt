@@ -17,19 +17,52 @@ src structure:
 config file
 [parameter server] (is just saved weights on ssd)
 data collector
-    global data
-    temporary data
+    stepwise data
+        add sequence nicely
+    sequential data
+        reorganize dict list
+    [data types]
+        [observations]
+        [value, advantage (1 & 2)]
+        [index, policy]
+        [chosen action and probability]
+        [reward, return]
+        [terminated, truncated]
 architectures
     [dense]
     transformer
 [actor class]
 learner class
+    losses
 [bandit class]
 training class
+    [get data from each step]
+    [pass all step data to data collector]
+    step data collector runs diagnostics on received step data and outputs what to do next
+        if done or truncated:
+            return Return, index and env_num to update bandits and sample new one for same env
+        else:
+            return None or False
+        call update and sample index on previous output (goal is to outsource all checking code outside of main loop)
+        need update bandit for env function and get indeces for all envs funcion (maybe both in one)
+        [if enough steps received for update:
+            send data to data collector (be aware of the overlap)]
+    run learner code
+    check actor pull function
 metrics
     get from data collector
     get from learner
     get from environment?
     get from actor?
     get from bandit?
-
+environment class
+    load correct env
+    handle whatever env specific needs to be done
+    discretisize continuous envs in gym, when passing actions
+    laserhockey
+        add basic agent into env
+        preprocess observations
+        discretisize actions and handle and convert them
+        get dense rewards from info
+    crypto
+        check if multiple heads are possible in gym

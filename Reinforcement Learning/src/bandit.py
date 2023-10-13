@@ -54,44 +54,70 @@ class Bandit:
         return candidates
 
 
-def initialize_bandits(bandit_params):
-    modes = bandit_params["mode"]
-    acc2_values = bandit_params["acc2"]
-    width_values = bandit_params["width"]
-    lr_values = bandit_params["lr"]
-    d = bandit_params["d"]
-    acc = bandit_params["acc"]
 
-    search_params = ["tau1", "tau2", "epsilon"]
+class Bandits:
+    def __init__(self, config):
+        self.bandit_params = config['bandit_params']
+        self.bandits = self.initialize_bandits()
 
-    bandits = []
-    for mode, acc2, width, lr in itertools.product(modes, acc2_values, width_values, lr_values):
-        bandit_dict = {}
-        for i, param in enumerate(search_params):
-            l, r = bandit_params[param]
-            bandit_dict[param] = Bandit(mode, l, r, acc[i], acc2, width, lr, d)
-        bandits.append(bandit_dict)
+    def initialize_bandits(self):
+        modes = self.bandit_params["mode"]
+        acc2_values = self.bandit_params["acc2"]
+        width_values = self.bandit_params["width"]
+        lr_values = self.bandit_params["lr"]
+        d = self.bandit_params["d"]
+        acc = self.bandit_params["acc"]
+        search_params = ["tau1", "tau2", "epsilon"]
 
-    return bandits
-
-
-def update_bandits(bandits, tau1, tau2, epsilon, g):
-    for bandit_dict in bandits:
-        bandit_dict["tau1"].update(tau1, g)
-        bandit_dict["tau2"].update(tau2, g)
-        bandit_dict["epsilon"].update(epsilon, g)
+        bandits = []
+        for mode, acc2, width, lr in itertools.product(modes, acc2_values, width_values, lr_values):
+            bandit_dict = {}
+            for i, param in enumerate(search_params):
+                l, r = self.bandit_params[param]
+                bandit_dict[param] = Bandit(mode, l, r, acc[i], acc2, width, lr, d)
+            bandits.append(bandit_dict)
+        return bandits
 
 
-def get_candidates(bandits):
-    candidates = {"tau1": [], "tau2": [], "epsilon": []}
-    for bandit_dict in bandits:
-        for param in ["tau1", "tau2", "epsilon"]:
-            candidates[param].extend(bandit_dict[param].sample())
-    return candidates
+    def update_bandits(self, tau1, tau2, epsilon, g):
+        for bandit_dict in self.bandits:
+            bandit_dict["tau1"].update(tau1, g)
+            bandit_dict["tau2"].update(tau2, g)
+            bandit_dict["epsilon"].update(epsilon, g)
 
 
-def sample_candidate(candidates):
-    tau1 = random.choice(candidates["tau1"])
-    tau2 = random.choice(candidates["tau2"])
-    epsilon = random.choice(candidates["epsilon"])
-    return tau1, tau2, epsilon
+    def get_candidates(self):
+        candidates = {"tau1": [], "tau2": [], "epsilon": []}
+        for bandit_dict in self.bandits:
+            for param in ["tau1", "tau2", "epsilon"]:
+                candidates[param].extend(bandit_dict[param].sample())
+        return candidates
+
+
+    def sample_candidate(self, candidates):
+        tau1 = random.choice(candidates["tau1"])
+        tau2 = random.choice(candidates["tau2"])
+        epsilon = random.choice(candidates["epsilon"])
+        return tau1, tau2, epsilon
+
+
+    def get_all_indeces(self, num_envs):
+        indeces = []
+        all_candidates = self.get_candidates()
+        for _ in range(num_envs):
+            indeces.append(self.sample_candidate(all_candidates))
+        return np.array(indeces)
+
+
+    def update_and_get_new_indeces(self, indeces, returns):
+        if indeces is None:
+            return 0
+        for _ in range(len(returns)):
+            tau1, tau2, epsilon = indeces[_]
+            g = returns[_]
+            self.update_bandits(tau1, tau2, epsilon, g)
+        new_indeces = []
+        all_candidates = self.get_candidates()
+        for _ in range(len(returns)):
+            new_indeces.append(self.sample_candidate(all_candidates))
+        return np.array(new_indeces)
