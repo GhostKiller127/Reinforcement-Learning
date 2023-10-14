@@ -57,12 +57,8 @@ class DataCollector:
             self.env_return[terminated_envs] = 0
             return indeces, returns, terminated_envs
 
-    def load_sequence(self):
-        num_batches = len(self.stacked_sequential_data) // self.batch_size
-        if num_batches == 0:
-            return None
-        else:
-            data_batches = self.stacked_sequential_data[:num_batches * self.batch_size]
-            self.stacked_sequential_data = self.stacked_sequential_data[num_batches * self.batch_size:]
-            return data_batches
+    def load_batched_sequences(self):
+        data = self.batched_sequential_data
+        self.batched_sequential_data = []
+        return data
     

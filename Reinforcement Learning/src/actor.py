@@ -10,7 +10,7 @@ class Actor:
     def __init__(self, config, metric, device):
         self.device = device
         self.d_pull = config['d_pull']
-        self.log_dir = 'models' + metric.log_dir[4:]
+        self.log_dir = f'models/{metric.run_name}'
         if config['architecture_params']['architecture'] == 'dense':
             self.actor1 = DenseModel(config, device)
             self.actor2 = DenseModel(config, device)
