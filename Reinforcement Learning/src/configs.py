@@ -1,5 +1,6 @@
-config_params = {
+configs = {
     "CartPole-v1": {
+        "num_steps": 1000,
         "replay": 2,
         "num_envs": 2,
         "batch_size": 64,
@@ -38,6 +39,28 @@ config_params = {
             "d": 3}
     },
     "LunarLander-v2": {
+        "num_steps": 1000,
+        "replay": 2,
+        "num_envs": 2,
+        "batch_size": 64,
+        "sequence_length": 5,
+        "bootstrap_length": 5,
+        "discount": 0.997,
+        "v_loss_scaling": 1.0,
+        "q_loss_scaling": 10.0,
+        "pi_loss_scaling": 10.0,
+        "importance_sampling_clip_c": 1.05,
+        "importance_sampling_clip_rho": 1.05,
+        "optimizer": "Adam Weight Decay",
+        "weight_decay_rate": 0.01,
+        "learning_rate": 5e-4,
+        "warmup_steps": 4000,
+        "adamw_beta1": 0.9,
+        "adamw_beta2": 0.98,
+        "adamw_epsilon": 1e-6,
+        "adamw_clip_norm": 50.0,
+        "learner_push_model_every_n_steps": 25,
+        "actor_pull_model_every_n_steps": 64,
         "architecture_params": {
             "architecture": "dense",
             "input_dim": 8,

@@ -17,7 +17,7 @@ class DataCollector:
         latest_data = self.stepwise_data[-1]
         self.env_return += latest_data['r']
         if np.all(np.logical_not(latest_data['d'])) and np.all(np.logical_not(latest_data['t'])):
-            return None, self.env_return, []
+            return None, None, []
         else:
             done_index = np.where(latest_data['d'])[0]
             truncated_index = np.where(latest_data['t'])[0]

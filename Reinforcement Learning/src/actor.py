@@ -29,8 +29,8 @@ class Actor:
         tau2 = indices[:,1].reshape(-1, 1)
         epsilon = indices[:,2].reshape(-1, 1)
 
-        softmax_1 = F.softmax(a1 / tau1, dim=1)
-        softmax_2 = F.softmax(a2 / tau2, dim=1)
+        softmax_1 = F.softmax(a1 * tau1, dim=1)
+        softmax_2 = F.softmax(a2 * tau2, dim=1)
         
         policy = epsilon * softmax_1 + (1 - epsilon) * softmax_2
     

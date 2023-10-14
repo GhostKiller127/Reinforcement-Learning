@@ -4,16 +4,16 @@ import laser_hockey_env as lh
 
 
 class Training:
-    def __init__(self, env_name, num_envs, num_steps):
-        self.num_envs = num_envs
-        self.num_steps = num_steps
+    def __init__(self, config, env_name):
+        self.num_steps = config['num_steps']
+        self.num_envs = config['num_envs']
         if env_name == "LaserHockey-v0":
             self.envs = [lambda: lh.LaserHockeyEnv() for _ in range(self.num_envs)]
         else:
             self.envs = [lambda: gym.make(env_name) for _ in range(self.num_envs)]
         self.env = SyncVectorEnv(self.envs)
 
-    def run(self, actor, data_collector, bandits):
+    def run(self, actor, data_collector, bandits, metric):
         next_observations, info = self.env.reset()
         indeces = bandits.get_all_indeces(self.num_envs)
         
@@ -38,9 +38,7 @@ class Training:
             # print(indeces)
             # print(new_indeces)
 
-
-            # add_metric_return(returns, terminated_envs)
-
+            metric.add_return(returns, step)
             
             print(f"Step number: {step+1}", end='\r')
 
