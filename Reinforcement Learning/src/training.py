@@ -13,32 +13,29 @@ class Training:
             self.envs = [lambda: gym.make(env_name) for _ in range(self.num_envs)]
         self.env = SyncVectorEnv(self.envs)
 
-    def run(self, actor, data_collector, bandits, metric):
-        next_observations, info = self.env.reset()
+    def run(self, actor, learner, bandits, data_collector, metric):
+        next_observations, infos = self.env.reset()
         indeces = bandits.get_all_indeces(self.num_envs)
         
         for step in range(self.num_steps):
             observations = next_observations
             v1, v2, a1, a2, policy = actor.calculate_values(observations, indeces)
-            actions, action_probs = actor.get_action(policy, stochastic=True)
+            actions, action_probs = actor.get_action(policy, stochastic=True, random=False)
             
-            action = actions.cpu().numpy()
-            # action = [self.env.single_action_space.sample() for _ in range(self.num_envs)]
-            next_observations, rewards, terminated, truncated, infos = self.env.step(action)
+            next_observations, rewards, terminated, truncated, infos = self.env.step(actions.cpu().numpy())
 
             data_collector.add_step_data(o=observations, v1=v1, v2=v2, a1=a1, a2=a2, i=indeces, p=policy, a=actions, a_p=action_probs, r=rewards, d=terminated, t=truncated)
             data_collector.check_save_sequence()
-            terminated_indeces, returns, terminated_envs = data_collector.update_return()
-            # print(terminated_indeces)
-            # print(returns)
-            # print(terminated_envs)
+            terminated_indeces, returns, terminated_envs = data_collector.check_done_and_return()
 
             new_indeces = bandits.update_and_get_new_indeces(terminated_indeces, returns)
             indeces[terminated_envs] = new_indeces
-            # print(indeces)
-            # print(new_indeces)
+
+            # losses = learner.check_and_update(data_collector)
+            actor.pull_weights(step)
 
             metric.add_return(returns, step)
+            # metric.add_losses(losses step)
             
             print(f"Step number: {step+1}", end='\r')
 

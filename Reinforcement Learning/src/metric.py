@@ -7,17 +7,22 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 class Metric:
     def __init__(self, config, env_name, test_parameters):
-        abbreviation_dict = {'num_steps': 's',
-                             'num_envs': 'n'}
+        abbreviation_dict = {"num_steps": 's',
+                             "num_envs": 'n',
+                             "batch_size": 's',
+                             "sequence_length": 'ss',
+                             "bootstrap_length": 'bb',
+                             "d_push": 'out',
+                             "d_pull": 'in'}
         test_parameters_abbreviated = self.replace_keys(test_parameters, abbreviation_dict)
         parameter_string = ','.join([f'{key}{value}' for key, value in test_parameters_abbreviated.items()])
         timestamp = datetime.datetime.now().strftime("%b%d-%H-%M-%S")
         run_name = f"{parameter_string}_{timestamp}"
-        log_dir = f"runs/{env_name}/{run_name}"
 
-        self.writer = SummaryWriter(log_dir=log_dir)
+        self.log_dir = f"runs/{env_name}/{run_name}"
+        self.writer = SummaryWriter(log_dir=self.log_dir)
 
-        hyperparams_file = os.path.join(log_dir, 'hyperparameters.json')
+        hyperparams_file = os.path.join(self.log_dir, 'hyperparameters.json')
         with open(hyperparams_file, 'w') as file:
             json.dump(config, file)
 

@@ -20,8 +20,8 @@ configs = {
         "adamw_beta2": 0.98,
         "adamw_epsilon": 1e-6,
         "adamw_clip_norm": 50.0,
-        "learner_push_model_every_n_steps": 25,
-        "actor_pull_model_every_n_steps": 64,
+        "d_push": 25,
+        "d_pull": 64,
         "architecture_params": {
             "architecture": "dense",
             "input_dim": 4,
@@ -59,8 +59,8 @@ configs = {
         "adamw_beta2": 0.98,
         "adamw_epsilon": 1e-6,
         "adamw_clip_norm": 50.0,
-        "learner_push_model_every_n_steps": 25,
-        "actor_pull_model_every_n_steps": 64,
+        "d_push": 25,
+        "d_pull": 64,
         "architecture_params": {
             "architecture": "dense",
             "input_dim": 8,

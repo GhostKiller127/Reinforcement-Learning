@@ -7,18 +7,21 @@ from architectures import TransformerModel
 
 
 class Actor:
-    def __init__(self, config, device):
+    def __init__(self, config, metric, device):
         self.device = device
-        if config['architecture'] == 'dense':
+        self.d_pull = config['d_pull']
+        self.log_dir = 'models' + metric.log_dir[4:]
+        if config['architecture_params']['architecture'] == 'dense':
             self.actor1 = DenseModel(config, device)
             self.actor2 = DenseModel(config, device)
-        if config['architecture'] == 'transformer':
+        if config['architecture_params']['architecture'] == 'transformer':
             self.actor1 = TransformerModel(config, device)
             self.actor2 = TransformerModel(config, device)
         
-    def load_weights(self, path1, path2):
-        self.actor1.load_state_dict(torch.load(path1))
-        self.actor2.load_state_dict(torch.load(path2))
+    def pull_weights(self, step):
+        if step % self.d_pull == 0:
+            self.actor1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
+            self.actor2.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
 
     def calculate_values(self, observations, indices):
         v1, a1 = self.actor1(observations)
@@ -36,7 +39,10 @@ class Actor:
     
         return v1, v2, a1, a2, policy
 
-    def get_action(self, policy, stochastic):
+    def get_action(self, policy, stochastic, random):
+        if random:
+            action = [self.env.single_action_space.sample() for _ in range(self.num_envs)]
+            action_prob = np.ones(action)
         if stochastic:
             action_dist = dist.Categorical(policy)
             action = action_dist.sample()

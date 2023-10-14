@@ -7,6 +7,7 @@ import torch.nn.functional as F
 class DenseModel(nn.Module):
     def __init__(self, config, device):
         super().__init__()
+        config = config['architecture_params']
         self.device = device
         self.linear_in = nn.Linear(config['input_dim'], config['hidden_dim']).to(device)
         self.value_head1 = nn.Linear(config['hidden_dim'], int(config['hidden_dim']/2)).to(device)

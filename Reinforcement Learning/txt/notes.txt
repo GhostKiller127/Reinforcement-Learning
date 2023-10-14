@@ -17,10 +17,10 @@ src structure:
 config file
 [parameter server] (is just saved weights on ssd)
 data collector
-    stepwise data
-        add sequence nicely
-    sequential data
-        reorganize dict list
+    [stepwise data]
+        [add sequence nicely]
+    [sequential data]
+        [reorganize dict list]
     [data types]
         [observations]
         [value, advantage (1 & 2)]
@@ -33,7 +33,14 @@ architectures
     transformer
 [actor class]
 learner class
-    losses
+    [where to save and how, what name]
+    get data from data collector
+    estimate all off-policy values
+    update weights
+    [push weights if needed]
+    return losses for tracking
+    learning rate finder
+    continue training where left of
 [bandit class]
 training class
     run learner code
