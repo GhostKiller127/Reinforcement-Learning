@@ -39,9 +39,9 @@ class Metric:
         for name, value in data.items():
             self.writer.add_scalar(name, value, global_step=step)
     
-    def add_losses(self, train_loss, val_loss, step):
-        self.writer.add_scalar('loss/train', train_loss, global_step=step)
-        self.writer.add_scalar('loss/val', val_loss, global_step=step)
+    def add_losses(self, losses):
+        for loss in losses:
+            self.writer.add_scalar('loss', loss[0], global_step=loss[1])
 
     def add_return(self, returns, step):
         if returns is None:

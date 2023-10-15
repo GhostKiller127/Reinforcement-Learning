@@ -19,23 +19,25 @@ class Training:
         
         for step in range(self.num_steps):
             observations = next_observations
-            v1, v2, a1, a2, policy = actor.calculate_values(observations, indeces)
+            policy = actor.calculate_policy(observations, indeces)
             actions, action_probs = actor.get_action(policy, stochastic=True, random=False)
             
             next_observations, rewards, terminated, truncated, infos = self.env.step(actions.cpu().numpy())
 
-            data_collector.add_step_data(o=observations, v1=v1, v2=v2, a1=a1, a2=a2, i=indeces, p=policy, a=actions, a_p=action_probs, r=rewards, d=terminated, t=truncated)
+            data_collector.add_step_data(o=observations, a=actions, a_p=action_probs, i=indeces, r=rewards, d=terminated, t=truncated)
             data_collector.check_save_sequence()
+            # if len(data_collector.batched_sequential_data) != 0:
+                # print(data_collector.batched_sequential_data[-1]['a'])
             terminated_indeces, returns, terminated_envs = data_collector.check_done_and_return()
 
             new_indeces = bandits.update_and_get_new_indeces(terminated_indeces, returns)
             indeces[terminated_envs] = new_indeces
 
-            # losses = learner.check_and_update(data_collector)
+            losses = learner.check_and_update(data_collector)
             actor.pull_weights(step)
 
             metric.add_return(returns, step)
-            # metric.add_losses(losses step)
+            metric.add_losses(losses)
             
             print(f"Step number: {step+1}", end='\r')
 

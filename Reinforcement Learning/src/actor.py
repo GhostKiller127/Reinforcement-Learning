@@ -17,27 +17,30 @@ class Actor:
         if config['architecture_params']['architecture'] == 'transformer':
             self.actor1 = TransformerModel(config, device)
             self.actor2 = TransformerModel(config, device)
+        for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
+            param1.requires_grad_(False)
+            param2.requires_grad_(False)
         
     def pull_weights(self, step):
         if step % self.d_pull == 0:
             self.actor1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
             self.actor2.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
 
-    def calculate_values(self, observations, indices):
+    def calculate_policy(self, observations, indices):
         v1, a1 = self.actor1(observations)
         v2, a2 = self.actor2(observations)
 
         indices = torch.tensor(indices, dtype=torch.float32).to(self.device)
-        tau1 = indices[:,0].reshape(-1, 1)
-        tau2 = indices[:,1].reshape(-1, 1)
-        epsilon = indices[:,2].reshape(-1, 1)
+        tau1 = indices[:,0].unsqueeze(1)
+        tau2 = indices[:,1].unsqueeze(1)
+        epsilon = indices[:,2].unsqueeze(1)
 
         softmax_1 = F.softmax(a1 * tau1, dim=1)
         softmax_2 = F.softmax(a2 * tau2, dim=1)
         
         policy = epsilon * softmax_1 + (1 - epsilon) * softmax_2
     
-        return v1, v2, a1, a2, policy
+        return policy
 
     def get_action(self, policy, stochastic, random):
         if random:

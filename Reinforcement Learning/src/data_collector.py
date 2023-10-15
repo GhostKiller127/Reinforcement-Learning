@@ -12,8 +12,8 @@ class DataCollector:
         self.stacked_sequential_data = {}
         self.batched_sequential_data = []
     
-    def add_step_data(self, o, v1, v2, a1, a2, i, p, a, a_p, r, d, t):
-        self.stepwise_data.append({'o': o, 'v1': v1, 'v2': v2, 'a1': a1, 'a2': a2, 'i': i, 'p': p, 'a': a, 'a_p': a_p, 'r': r, 'd': d, 't': t})
+    def add_step_data(self, o, a, a_p, i, r, d, t):
+        self.stepwise_data.append({'o': o, 'a': a, 'a_p': a_p, 'i': i, 'r': r, 'd': d, 't': t})
 
     def add_stacked_data(self, stacked_data):
         for key in stacked_data.keys():
@@ -36,7 +36,7 @@ class DataCollector:
                 break
 
     def check_save_sequence(self):
-        if len(self.stepwise_data) == self.sequence_length + self.bootstrap_length:
+        if len(self.stepwise_data) == self.sequence_length + self.bootstrap_length + 1:
             stacked_data = {key: np.stack([d[key] for d in self.stepwise_data], axis=1) if isinstance(self.stepwise_data[0][key], np.ndarray)
                             else torch.stack([d[key] for d in self.stepwise_data], dim=1) for key in self.stepwise_data[0].keys()}
             self.add_stacked_data(stacked_data)
