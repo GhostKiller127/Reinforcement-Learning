@@ -10,16 +10,11 @@ environment class
     crypto
         check if multiple heads are possible in gym
 
+evaluation
+    plot bandits average evaluation performance
+    plot argmax performance
+
 todo
-    reactivate bandits
-    implement learning rate finder
     plot index evaluation average histogram
     make it available to load checkpoints and continue training where left off
     check with old code for improvements
-
-evaluation
-    plot bandits average evaluation performance
-    show argmax performance
-
-commit text:
-    optimizations & added main.py

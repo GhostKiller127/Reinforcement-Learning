@@ -7,17 +7,17 @@ from training import Training
 from data_collector import DataCollector
 from metric import Metric
 
-env_name = "CartPole-v1"
-# env_name = "LunarLander-v2"
+# env_name = "CartPole-v1"
+env_name = "LunarLander-v2"
 # env_name = "LaserHockey-v0"
 
-test_parameters = {'num_envs': 4,
-                   'batch_size': 4,
-                   'sequence_length': 10,
+test_parameters = {'num_envs': 32,
+                   'batch_size': 8,
+                   'sequence_length': 20,
                    'bootstrap_length': 1,
-                   'learning_rate': 3e-4,
-                   'd_push': 1,
-                   'd_pull': 10}
+                   'learning_rate': 2e-4,
+                   'd_push': 4,
+                   'd_pull': 20}
 
 config = {key: test_parameters[key] if key in test_parameters else value for key, value in configs[env_name].items()}
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -13,7 +13,8 @@ class Metric:
                              'bootstrap_length': 'bb',
                              'learning_rate': 'lr',
                              'd_push': 'd_o',
-                             'd_pull': 'd_i'}
+                             'd_pull': 'd_i',
+                             'lr_finder': 'LR'}
         test_parameters_abbreviated = self.replace_keys(test_parameters, abbreviation_dict)
         parameter_string = ','.join([f'{key}{value}' for key, value in test_parameters_abbreviated.items()])
         timestamp = datetime.datetime.now().strftime('%b%d-%H-%M-%S')

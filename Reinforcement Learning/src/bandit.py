@@ -105,23 +105,23 @@ class Bandits:
 
     def get_all_indeces(self, num_envs):
         indeces = []
-        # all_candidates = self.get_candidates()
+        all_candidates = self.get_candidates()
         for _ in range(num_envs):
-            indeces.append((1., 1., 0.5))
-            # indeces.append(self.sample_candidate(all_candidates))
+            # indeces.append((1., 1., 0.5))
+            indeces.append(self.sample_candidate(all_candidates))
         return np.array(indeces)
 
 
     def update_and_get_new_indeces(self, terminated_indeces, returns):
         if terminated_indeces is None:
             return 0
-        # for _ in range(len(returns)):
-        #     tau1, tau2, epsilon = terminated_indeces[_]
-        #     g = returns[_]
-            # self.update_bandits(tau1, tau2, epsilon, g)
-        new_indeces = []
-        # all_candidates = self.get_candidates()
         for _ in range(len(returns)):
-            new_indeces.append((1., 1., 0.5))
-            # new_indeces.append(self.sample_candidate(all_candidates))
+            tau1, tau2, epsilon = terminated_indeces[_]
+            g = returns[_]
+            self.update_bandits(tau1, tau2, epsilon, g)
+        new_indeces = []
+        all_candidates = self.get_candidates()
+        for _ in range(len(returns)):
+            # new_indeces.append((1., 1., 0.5))
+            new_indeces.append(self.sample_candidate(all_candidates))
         return np.array(new_indeces)

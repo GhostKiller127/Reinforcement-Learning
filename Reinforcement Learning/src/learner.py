@@ -17,10 +17,19 @@ class Learner:
         if config['architecture_params']['architecture'] == 'transformer':
             self.learner1 = TransformerModel(config, device)
             self.learner2 = TransformerModel(config, device)
-        self.optimizer1 = torch.optim.AdamW(self.learner1.parameters(), lr=self.config["learning_rate"])
-        self.optimizer2 = torch.optim.AdamW(self.learner2.parameters(), lr=self.config["learning_rate"])
+        initial_lr, end_lr, gamma = self.get_scheduler_args()
+        self.optimizer1 = torch.optim.AdamW(self.learner1.parameters(), lr=initial_lr)
+        self.optimizer2 = torch.optim.AdamW(self.learner2.parameters(), lr=initial_lr)
+        self.scheduler1 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer1, gamma=(end_lr/initial_lr)**(gamma))
+        self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**(gamma))
         os.makedirs(self.log_dir, exist_ok=True)
         self.push_weights()
+
+    
+    def get_scheduler_args(self):
+        if self.config["lr_finder"]:
+            return 1e-8, 1e-2, 1 / self.config['warmup_steps']
+        return self.config["learning_rate"] / 100, self.config["learning_rate"], 2 / self.config['warmup_steps']
 
 
     def push_weights(self):
@@ -121,8 +130,8 @@ class Learner:
         v_loss2 = torch.mean((vt2 - v2[:,:-self.config['bootstrap_length']-1])**2)
         q_loss1 = torch.mean((rt1 - q1[:,:-self.config['bootstrap_length']-1])**2)
         q_loss2 = torch.mean((rt2 - q2[:,:-self.config['bootstrap_length']-1])**2)
-        p_loss1 = torch.mean(pt1 * -torch.log(p1[:,:-self.config['bootstrap_length']-1]))
-        p_loss2 = torch.mean(pt2 * -torch.log(p2[:,:-self.config['bootstrap_length']-1]))
+        p_loss1 = torch.mean(pt1 * -torch.log(p1[:,:-self.config['bootstrap_length']-1] + 1e-6))
+        p_loss2 = torch.mean(pt2 * -torch.log(p2[:,:-self.config['bootstrap_length']-1] + 1e-6))
         return v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
     
 
@@ -133,11 +142,13 @@ class Learner:
         loss2.backward()
         gradient_norm1 = torch.nn.utils.clip_grad_norm_(self.learner1.parameters(), float('inf'))
         gradient_norm2 = torch.nn.utils.clip_grad_norm_(self.learner2.parameters(), float('inf'))
-        for _ in range(self.config['replay']):
-            self.optimizer1.step()
-            self.optimizer2.step()
+        self.optimizer1.step()
+        self.optimizer2.step()
         self.optimizer1.zero_grad()
         self.optimizer2.zero_grad()
+        if self.count < self.config['warmup_steps']:
+            self.scheduler1.step()
+            self.scheduler2.step()
         self.count += 1
         self.push_weights()
         return loss1, loss2, gradient_norm1, gradient_norm2
