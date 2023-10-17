@@ -1,48 +1,4 @@
-training plots:
-combined loss (1,2)
-V-loss (1,2)
-Q-loss (1,2)
-π-loss (1,2)
-average performance (real or not?)
-
-validation plots:
-index evaluation average 
-bandits average evaluation performance
-[argmax performance (1,2,1+2)]
-
-use old code to generate newer one
-use old versions to merge with specified functionalities
-
-src structure:
-config file
-[data collector]
-architectures
-    [dense]
-    transformer
-[actor class]
-learner class
-    currently rewards after termination still count (means it doesnt really terminate)
-    [get data from data collector]
-    [estimate all off-policy values]
-    update weights
-    do i need an optimizer class?
-    [push weights if needed]
-    return losses for tracking
-    learning rate finder
-    continue training where left of
-[bandit class]
-training class
-    run learner code
-    [check actor pull function]
-    write metrics
-    make it available to load checkpoints and continue training where left off
-metric class
-    get from data collector
-    get from learner
-    get from environment?
-    get from actor?
-    get from bandit?
-environment class?
+environment class
     load correct env
     handle whatever env specific needs to be done
     discretisize continuous envs in gym, when passing actions
@@ -53,3 +9,17 @@ environment class?
         get dense rewards from info
     crypto
         check if multiple heads are possible in gym
+
+todo
+    reactivate bandits
+    implement learning rate finder
+    plot index evaluation average histogram
+    make it available to load checkpoints and continue training where left off
+    check with old code for improvements
+
+evaluation
+    plot bandits average evaluation performance
+    show argmax performance
+
+commit text:
+    optimizations & added main.py

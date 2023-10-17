@@ -18,17 +18,20 @@ class Bandit:
         self.N = np.zeros(self.size)
         self.search_space = np.linspace(self.l, self.r, self.size)
 
+
     def evaluate(self):
         V = np.convolve(self.w, np.ones(2 * self.width + 1), mode='same') / (2 * self.width + 1)
         V[:self.width] *= [(2 * self.width + 1) / (self.width + 1 + i) for i in range(self.width)]
         V[-self.width:] *= [(2 * self.width + 1) / (self.width + 1 + i) for i in range(self.width)][::-1]
         return V
 
+
     def update(self, x, g):
         i = np.argmin(np.abs(self.search_space - x))
         slice_indices = slice(*np.clip([i - self.width, i + self.width + 1], 0, self.size))
         self.w[slice_indices] += self.lr * (g - self.evaluate()[i])
         self.N[slice_indices] += 1
+
 
     def sample(self):
         V = self.evaluate()
@@ -50,15 +53,14 @@ class Bandit:
             probabilities = np.exp(scores) / np.sum(np.exp(scores))
             candidates_indices = np.random.choice(len(scores), self.d, replace=False, p=probabilities)
             candidates = self.search_space[candidates_indices]
-
         return candidates
-
 
 
 class Bandits:
     def __init__(self, config):
         self.bandit_params = config['bandit_params']
         self.bandits = self.initialize_bandits()
+
 
     def initialize_bandits(self):
         modes = self.bandit_params["mode"]
@@ -103,21 +105,23 @@ class Bandits:
 
     def get_all_indeces(self, num_envs):
         indeces = []
-        all_candidates = self.get_candidates()
+        # all_candidates = self.get_candidates()
         for _ in range(num_envs):
-            indeces.append(self.sample_candidate(all_candidates))
+            indeces.append((1., 1., 0.5))
+            # indeces.append(self.sample_candidate(all_candidates))
         return np.array(indeces)
 
 
-    def update_and_get_new_indeces(self, indeces, returns):
-        if indeces is None:
+    def update_and_get_new_indeces(self, terminated_indeces, returns):
+        if terminated_indeces is None:
             return 0
-        for _ in range(len(returns)):
-            tau1, tau2, epsilon = indeces[_]
-            g = returns[_]
-            self.update_bandits(tau1, tau2, epsilon, g)
+        # for _ in range(len(returns)):
+        #     tau1, tau2, epsilon = terminated_indeces[_]
+        #     g = returns[_]
+            # self.update_bandits(tau1, tau2, epsilon, g)
         new_indeces = []
-        all_candidates = self.get_candidates()
+        # all_candidates = self.get_candidates()
         for _ in range(len(returns)):
-            new_indeces.append(self.sample_candidate(all_candidates))
+            new_indeces.append((1., 1., 0.5))
+            # new_indeces.append(self.sample_candidate(all_candidates))
         return np.array(new_indeces)

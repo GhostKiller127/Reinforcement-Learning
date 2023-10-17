@@ -8,9 +8,10 @@ from architectures import TransformerModel
 
 class Actor:
     def __init__(self, config, metric, device):
+        self.count = 0
         self.device = device
-        self.d_pull = config['d_pull']
-        self.log_dir = f'models/{metric.run_name}'
+        self.config = config
+        self.log_dir = f'{metric.log_dir}/models'
         if config['architecture_params']['architecture'] == 'dense':
             self.actor1 = DenseModel(config, device)
             self.actor2 = DenseModel(config, device)
@@ -20,11 +21,15 @@ class Actor:
         for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
             param1.requires_grad_(False)
             param2.requires_grad_(False)
+        self.pull_weights()
+
         
-    def pull_weights(self, step):
-        if step % self.d_pull == 0:
+    def pull_weights(self):
+        if self.count % self.config['d_push'] == 0:
             self.actor1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
             self.actor2.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
+        self.count += 1
+
 
     def calculate_policy(self, observations, indices):
         v1, a1 = self.actor1(observations)
@@ -39,8 +44,8 @@ class Actor:
         softmax_2 = F.softmax(a2 * tau2, dim=1)
         
         policy = epsilon * softmax_1 + (1 - epsilon) * softmax_2
-    
         return policy
+
 
     def get_action(self, policy, stochastic, random):
         if random:
@@ -53,6 +58,5 @@ class Actor:
         else:
             _, action = policy.max(1)
             action_prob = policy.gather(1, action.unsqueeze(1))
-        
         return action, action_prob
     

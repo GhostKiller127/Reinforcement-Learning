@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 
 class DenseModel(nn.Module):
-    def __init__(self, config, device, requires_grad=True):
+    def __init__(self, config, device):
         super().__init__()
         config = config['architecture_params']
         self.device = device
