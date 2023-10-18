@@ -15,6 +15,6 @@ evaluation
     plot argmax performance
 
 todo
-    plot index evaluation average histogram
-    make it available to load checkpoints and continue training where left off
+    plot index evaluation histogram
+    plot index count histogram
     check with old code for improvements

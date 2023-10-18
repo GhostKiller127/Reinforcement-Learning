@@ -5,7 +5,8 @@ import laser_hockey_env as lh
 
 class Training:
     def __init__(self, config, env_name):
-        self.num_frames = config['num_frames']
+        self.max_frames = config['max_frames']
+        self.trained_frames = config['trained_frames']
         self.num_envs = config['num_envs']
         if env_name == "LaserHockey-v0":
             self.envs = [lambda: lh.LaserHockeyEnv() for _ in range(self.num_envs)]
@@ -17,8 +18,8 @@ class Training:
         next_observations, infos = self.env.reset()
         indeces = bandits.get_all_indeces(self.num_envs)
         
-        num_frames = 0
-        while num_frames < self.num_frames:
+        trained_frames = self.trained_frames
+        while trained_frames < self.max_frames:
             observations = next_observations
             policy = actor.calculate_policy(observations, indeces)
             actions, action_probs = actor.get_action(policy, stochastic=True, random=False)
@@ -35,10 +36,10 @@ class Training:
             losses = learner.check_and_update(data_collector)
             actor.pull_weights()
 
-            num_frames += self.num_envs
-            metric.add_return(returns, num_frames)
-            metric.add_losses(losses, num_frames)
+            trained_frames += self.num_envs
+            metric.add_return(returns, trained_frames)
+            metric.add_losses(losses, trained_frames)
 
-            print(f"Frames: {num_frames}/{self.num_frames}", end='\r')
+            print(f"Frames: {trained_frames}/{self.max_frames}", end='\r')
 
         self.env.close()

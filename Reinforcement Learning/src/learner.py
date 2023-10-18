@@ -20,22 +20,38 @@ class Learner:
         initial_lr, end_lr, gamma = self.get_scheduler_args()
         self.optimizer1 = torch.optim.AdamW(self.learner1.parameters(), lr=initial_lr)
         self.optimizer2 = torch.optim.AdamW(self.learner2.parameters(), lr=initial_lr)
-        self.scheduler1 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer1, gamma=(end_lr/initial_lr)**(gamma))
-        self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**(gamma))
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.push_weights()
+        self.scheduler1 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer1, gamma=(end_lr/initial_lr)**gamma)
+        self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**gamma)
+        if self.config['load_run'] is None:
+            os.makedirs(self.log_dir, exist_ok=True)
+            self.push_weights()
+        else:
+            self.pull_weights()
 
     
     def get_scheduler_args(self):
         if self.config["lr_finder"]:
             return 1e-8, 1e-2, 1 / self.config['warmup_steps']
-        return self.config["learning_rate"] / 100, self.config["learning_rate"], 2 / self.config['warmup_steps']
+        if self.config['load_run'] is not None:
+            self.config['warmup_steps'] = 0
+            return self.config["learning_rate"], self.config["learning_rate"], 0
+        self.config['warmup_steps'] = int(self.config['warmup_steps'] / 2)
+        return self.config["learning_rate"] / 100, self.config["learning_rate"], 1 / self.config['warmup_steps']
 
 
     def push_weights(self):
         if self.count % self.config['d_push'] == 0:
             torch.save(self.learner1.state_dict(), f'{self.log_dir}/learner1.pth')
             torch.save(self.learner2.state_dict(), f'{self.log_dir}/learner2.pth')
+            torch.save(self.optimizer1.state_dict(), f'{self.log_dir}/optimizer1.pth')
+            torch.save(self.optimizer2.state_dict(), f'{self.log_dir}/optimizer2.pth')
+
+
+    def pull_weights(self):
+        self.learner1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
+        self.learner2.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
+        self.optimizer1.load_state_dict(torch.load(f'{self.log_dir}/optimizer1.pth'))
+        self.optimizer2.load_state_dict(torch.load(f'{self.log_dir}/optimizer2.pth'))
 
 
     def calculate_values(self, batch):
@@ -140,8 +156,8 @@ class Learner:
         loss2 = (self.config['v_loss_scaling'] * v_loss2 + self.config['q_loss_scaling'] * q_loss2 + self.config['p_loss_scaling'] * p_loss2) / (self.config['v_loss_scaling'] + self.config['q_loss_scaling'] + self.config['p_loss_scaling'])
         loss1.backward()
         loss2.backward()
-        gradient_norm1 = torch.nn.utils.clip_grad_norm_(self.learner1.parameters(), float('inf'))
-        gradient_norm2 = torch.nn.utils.clip_grad_norm_(self.learner2.parameters(), float('inf'))
+        gradient_norm1 = torch.nn.utils.clip_grad_norm_(self.learner1.parameters(), self.config['adamw_clip_norm'])
+        gradient_norm2 = torch.nn.utils.clip_grad_norm_(self.learner2.parameters(), self.config['adamw_clip_norm'])
         self.optimizer1.step()
         self.optimizer2.step()
         self.optimizer1.zero_grad()

@@ -1,6 +1,6 @@
 configs = {
     "CartPole-v1": {
-        "num_frames": 1000000,
+        "max_frames": 1000000,
         "replay": 1,
         "num_envs": 16,
         "batch_size": 4,
@@ -24,7 +24,7 @@ configs = {
         "adamw_beta1": 0.9,
         "adamw_beta2": 0.98,
         "adamw_epsilon": 1e-6,
-        "adamw_clip_norm": 50.0,
+        "adamw_clip_norm": 1e10,
         "architecture_params": {
             "architecture": "dense",
             "input_dim": 4,
@@ -42,7 +42,10 @@ configs = {
             "d": 3}
     },
     "LunarLander-v2": {
-        "num_frames": 3000000,
+        "load_run": None,
+        "lr_finder": False,
+        "trained_frames": 0,
+        "max_frames": 10000000,
         "replay": 1,
         "num_envs": 16,
         "batch_size": 4,
@@ -51,8 +54,8 @@ configs = {
         "d_push": 4,
         "d_pull": 10,
         "discount": 0.997,
-        "reward_scaling_1": 1.25,
-        "reward_scaling_2": 0.25,
+        "reward_scaling_1": 1,
+        "reward_scaling_2": 0.2,
         "v_loss_scaling": 1.0,
         "q_loss_scaling": 2.0,
         "p_loss_scaling": 2.0,
@@ -61,12 +64,11 @@ configs = {
         "optimizer": "Adam Weight Decay",
         "weight_decay_rate": 0.01,
         "learning_rate": 1e-4,
-        "lr_finder": False,
         "warmup_steps": 1000,
         "adamw_beta1": 0.9,
         "adamw_beta2": 0.98,
         "adamw_epsilon": 1e-6,
-        "adamw_clip_norm": 50.0,
+        "adamw_clip_norm": 1e10,
         "architecture_params": {
             "architecture": "dense",
             "input_dim": 8,

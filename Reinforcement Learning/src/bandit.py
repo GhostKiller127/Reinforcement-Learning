@@ -1,6 +1,8 @@
+import pickle
 import random
 import numpy as np
 import itertools
+
 
 
 class Bandit:
@@ -56,11 +58,27 @@ class Bandit:
         return candidates
 
 
-class Bandits:
-    def __init__(self, config):
-        self.bandit_params = config['bandit_params']
-        self.bandits = self.initialize_bandits()
 
+class Bandits:
+    def __init__(self, config, metric):
+        self.bandit_params = config['bandit_params']
+        self.log_dir = metric.log_dir
+        self.bandits_file = f'{self.log_dir}/bandits.pkl'
+        if config['load_run'] is None:
+            self.bandits = self.initialize_bandits()
+        else:
+            self.bandits = self.load_bandits()
+
+
+    def save_bandits(self):
+        with open(self.bandits_file, 'wb') as file:
+            pickle.dump(self.bandits, file)
+
+
+    def load_bandits(self):
+        with open(self.bandits_file, 'rb') as file:
+            self.bandits = pickle.load(file)
+        return self.bandits
 
     def initialize_bandits(self):
         modes = self.bandit_params["mode"]
@@ -107,7 +125,6 @@ class Bandits:
         indeces = []
         all_candidates = self.get_candidates()
         for _ in range(num_envs):
-            # indeces.append((1., 1., 0.5))
             indeces.append(self.sample_candidate(all_candidates))
         return np.array(indeces)
 
@@ -119,9 +136,9 @@ class Bandits:
             tau1, tau2, epsilon = terminated_indeces[_]
             g = returns[_]
             self.update_bandits(tau1, tau2, epsilon, g)
+        self.save_bandits()
         new_indeces = []
         all_candidates = self.get_candidates()
         for _ in range(len(returns)):
-            # new_indeces.append((1., 1., 0.5))
             new_indeces.append(self.sample_candidate(all_candidates))
         return np.array(new_indeces)
