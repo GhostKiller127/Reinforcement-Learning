@@ -107,7 +107,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 10000
+        self.max_timesteps = 600
 
         self.closest_to_goal_dist = 1000
 
@@ -511,9 +511,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             if self.winner == 0: # tie
                 r += 0
             elif self.winner == 1: # you won
-                r += 1
+                r += 10
             else: # opponent won
-                r -= 1
+                r -= 10
 
         return r
 
@@ -526,7 +526,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             max_dist = 10.
             max_reward = -5. # max (negative) reward through this proxy
             factor = max_reward / (max_dist*self.max_timesteps/2)
-            reward_closeness_to_puck += dist_to_puck*factor # Proxy reward for being close to puck in the own half
+            # reward_closeness_to_puck += dist_to_puck*factor # Proxy reward for being close to puck in the own half
+            reward_closeness_to_puck = -0.005 * dist_to_puck
         # Proxy reward: touch puck
         reward_touch_puck = 0.
         if self.player1_contact_puck:
@@ -536,13 +537,16 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         reward_puck_direction = 0
         max_reward = 1.
         factor = max_reward / (self.max_timesteps * self.max_puck_speed)
-        reward_puck_direction = self.puck.linearVelocity[0]*factor # Puck flies right is good and left not
+        # reward_puck_direction = self.puck.linearVelocity[0]*factor # Puck flies right is good and left not
+        reward_puck_direction = 0.001 * self.puck.linearVelocity[0]
 
+        obs2 = self.obs_agent_two()
 
         return { "winner": self.winner,
                  "reward_closeness_to_puck" : reward_closeness_to_puck,
                  "reward_touch_puck" : reward_touch_puck,
                  "reward_puck_direction" : reward_puck_direction,
+                 "obs_agent_two": obs2
                }
 
 
@@ -568,11 +572,12 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.world.Step(self.timeStep, 6 * 30, 2 * 30)
 
         obs = self._get_obs()
-        if self.time >=self.max_timesteps:
+        if self.time >= self.max_timesteps:
             self.truncated = True
 
         reward = self._compute_reward()
         info = self._get_info()
+        reward += info['reward_closeness_to_puck'] + info['reward_touch_puck'] + info['reward_puck_direction']
 
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W,H/2)))

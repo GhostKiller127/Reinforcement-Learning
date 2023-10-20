@@ -1,30 +1,21 @@
-import gymnasium as gym
-from gymnasium.vector import SyncVectorEnv
-import laser_hockey_env as lh
-
-
 class Training:
-    def __init__(self, config, env_name):
+    def __init__(self, config):
         self.max_frames = config['max_frames']
         self.trained_frames = config['trained_frames']
         self.num_envs = config['num_envs']
-        if env_name == "LaserHockey-v0":
-            self.envs = [lambda: lh.LaserHockeyEnv() for _ in range(self.num_envs)]
-        else:
-            self.envs = [lambda: gym.make(env_name) for _ in range(self.num_envs)]
-        self.env = SyncVectorEnv(self.envs)
 
-    def run(self, actor, learner, bandits, data_collector, metric):
-        next_observations, infos = self.env.reset()
+
+    def run(self, environments, data_collector, metric, bandits, learner, actor):
+        next_observations, infos = environments.reset()
         indeces = bandits.get_all_indeces(self.num_envs)
         
-        trained_frames = self.trained_frames
-        while trained_frames < self.max_frames:
+        while self.trained_frames < self.max_frames:
             observations = next_observations
             policy = actor.calculate_policy(observations, indeces)
             actions, action_probs = actor.get_action(policy, stochastic=True, random=False)
-            
-            next_observations, rewards, terminated, truncated, infos = self.env.step(actions.cpu().numpy())
+
+            converted_actions = environments.convert_actions(actions, infos)
+            next_observations, rewards, terminated, truncated, infos = environments.step(converted_actions)
 
             data_collector.add_step_data(o=observations, a=actions, a_p=action_probs, i=indeces, r=rewards, d=terminated, t=truncated)
             data_collector.check_save_sequence()
@@ -36,10 +27,10 @@ class Training:
             losses = learner.check_and_update(data_collector)
             actor.pull_weights()
 
-            trained_frames += self.num_envs
-            metric.add_return(returns, trained_frames)
-            metric.add_losses(losses, trained_frames)
+            self.trained_frames += self.num_envs
+            metric.add_return(returns, self.trained_frames)
+            metric.add_losses(losses, self.trained_frames)
 
-            print(f"Frames: {trained_frames}/{self.max_frames}", end='\r')
+            print(f"Frames: {self.trained_frames}/{self.max_frames}", end='\r')
 
-        self.env.close()
+        environments.close()

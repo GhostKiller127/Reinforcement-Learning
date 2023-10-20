@@ -30,11 +30,11 @@ class Learner:
 
     
     def get_scheduler_args(self):
-        if self.config["lr_finder"]:
-            return 1e-8, 1e-2, 1 / self.config['warmup_steps']
         if self.config['load_run'] is not None:
             self.config['warmup_steps'] = 0
             return self.config["learning_rate"], self.config["learning_rate"], 0
+        if self.config["lr_finder"]:
+            return 1e-8, 1e-2, 1 / self.config['warmup_steps']
         self.config['warmup_steps'] = int(self.config['warmup_steps'] / 2)
         return self.config["learning_rate"] / 100, self.config["learning_rate"], 1 / self.config['warmup_steps']
 

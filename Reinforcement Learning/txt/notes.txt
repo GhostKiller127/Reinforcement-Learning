@@ -1,20 +1,26 @@
-environment class
-    load correct env
-    handle whatever env specific needs to be done
-    discretisize continuous envs in gym, when passing actions
-    laserhockey
-        add basic agent into env
-        preprocess observations
-        discretisize actions and handle and convert them
-        get dense rewards from info
-    crypto
-        check if multiple heads are possible in gym
-
 evaluation
     plot bandits average evaluation performance
     plot argmax performance
 
-todo
+plots
     plot index evaluation histogram
     plot index count histogram
     check with old code for improvements
+
+environment class
+    [initialize environment class and pass to training class]
+    [initialize self.envs by name]
+    [implement step and reset function]
+    laserhockey
+        [get envs list by resetting (switch puck start position)]
+        [get obvs_2]
+        [add basic agent action]
+        [discretisize actions and handle and convert them]
+    crypto
+        check if multiple heads are possible in gym
+
+todo
+    calculate targets more efficiently
+
+lunarlander runs
+    trying out gradient clipping

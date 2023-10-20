@@ -6,7 +6,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 
 class Metric:
-    def __init__(self, config, env_name, train_parameters):
+    def __init__(self, config, env_name):
         self.config = config
         if config['load_run'] is None:
             abbreviation_dict = {'num_envs': 'env',
@@ -16,8 +16,8 @@ class Metric:
                                 'learning_rate': 'lr',
                                 'd_push': 'd_o',
                                 'd_pull': 'd_i'}
-            test_parameters_abbreviated = self.replace_keys(train_parameters, abbreviation_dict)
-            parameter_string = ','.join([f'{key}{value}' for key, value in test_parameters_abbreviated.items()])
+            abbreviated_parameters = self.replace_keys(abbreviation_dict)
+            parameter_string = ','.join([f'{key}{value}' for key, value in abbreviated_parameters.items()])
             timestamp = datetime.datetime.now().strftime('%b%d-%H-%M-%S')
             self.log_dir = f'runs/{env_name}/{parameter_string}_{timestamp}'
         else:
@@ -28,8 +28,8 @@ class Metric:
             json.dump(config, file)
     
 
-    def replace_keys(self, first_dict, second_dict):
-        return {second_dict[key]: value for key, value in first_dict.items() if key in second_dict}
+    def replace_keys(self, abbreviation_dict):
+        return {abbreviation_dict[key]: value for key, value in self.config.items() if key in abbreviation_dict}
 
 
     def add_losses(self, losses, trained_frames):
