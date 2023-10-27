@@ -1,26 +1,30 @@
-evaluation
-    plot bandits average evaluation performance
-    plot argmax performance
+todo
+    environment
+        merge gymnasium play, testing, evaluation & training
+    optimizations
+        add transformer
+            can I predict for multiple obs in one pass?
+                actor: no
+                learner from memory: yes!
+                    crypto: add profit state to each kline
+            actor
+                repeat first obs to fill the sequence length
+            learner and/or data collector
+                add sequence - 1 times the first obs at the beginning of the sequence for gym
+                forward pass and train on whole sequence
+        look at agent57 and other deepmind papers
+        read r2d2 ff vs deep, impala
+        target network
 
 plots
-    plot index evaluation histogram
-    plot index count histogram
-    check with old code for improvements
+    save data plots on file in plots folder, because tensorboard files get too big and too slow to load
+    add index weight and count distribution as image
+    if saving takes long, save every 50.000 frames
 
-environment class
-    [initialize environment class and pass to training class]
-    [initialize self.envs by name]
-    [implement step and reset function]
-    laserhockey
-        [get envs list by resetting (switch puck start position)]
-        [get obvs_2]
-        [add basic agent action]
-        [discretisize actions and handle and convert them]
-    crypto
-        check if multiple heads are possible in gym
-
-todo
-    calculate targets more efficiently
-
-lunarlander runs
-    trying out gradient clipping
+runs
+    lunarlander
+        doubled r2 to 0.8, maybe larger discount needed
+        rerun: doubled r2 to 0.8, per
+        increase discount factor to .995 then .997
+    cartpole
+        rerun with per

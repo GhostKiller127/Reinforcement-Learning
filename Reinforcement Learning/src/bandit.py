@@ -32,7 +32,7 @@ class Bandit:
         i = np.argmin(np.abs(self.search_space - x))
         slice_indices = slice(*np.clip([i - self.width, i + self.width + 1], 0, self.size))
         self.w[slice_indices] += self.lr * (g - self.evaluate()[i])
-        self.N[slice_indices] += 1
+        self.N[i] += 1
 
 
     def sample(self):
@@ -60,14 +60,16 @@ class Bandit:
 
 
 class Bandits:
-    def __init__(self, config, metric):
-        self.bandit_params = config['bandit_params']
-        self.log_dir = metric.log_dir
+    def __init__(self, training_class):
+        self.config = training_class.config
+        self.bandit_params = self.config['bandit_params']
+        self.log_dir = training_class.log_dir
         self.bandits_file = f'{self.log_dir}/bandits.pkl'
-        if config['load_run'] is None:
+        if self.config['load_run'] is None:
             self.bandits = self.initialize_bandits()
         else:
             self.bandits = self.load_bandits()
+        self.search_space = self.get_all_search_space()
 
 
     def save_bandits(self):
@@ -79,6 +81,7 @@ class Bandits:
         with open(self.bandits_file, 'rb') as file:
             self.bandits = pickle.load(file)
         return self.bandits
+
 
     def initialize_bandits(self):
         modes = self.bandit_params["mode"]
@@ -119,6 +122,68 @@ class Bandits:
         tau2 = random.choice(candidates["tau2"])
         epsilon = random.choice(candidates["epsilon"])
         return tau1, tau2, epsilon
+    
+
+    def get_all_search_space(self):
+        tau1_search_space = np.array([])
+        tau2_search_space = np.array([])
+        epsilon_search_space = np.array([])
+        
+        for bandit_dict in self.bandits:
+            tau1_search_space = np.union1d(tau1_search_space, bandit_dict["tau1"].search_space)
+            tau2_search_space = np.union1d(tau2_search_space, bandit_dict["tau2"].search_space)
+            epsilon_search_space = np.union1d(epsilon_search_space, bandit_dict["epsilon"].search_space)
+        
+        return tau1_search_space, tau2_search_space, epsilon_search_space
+
+
+    def get_index_data(self, only_index=False):
+        tau1_search_space, tau2_search_space, epsilon_search_space = self.search_space
+        num_bandits = len(self.bandits)
+
+        tau1_average_count = np.zeros(len(tau1_search_space))
+        tau2_average_count = np.zeros(len(tau2_search_space))
+        epsilon_average_count = np.zeros(len(epsilon_search_space))
+        tau1_average_weight = np.zeros(len(tau1_search_space))
+        tau2_average_weight = np.zeros(len(tau2_search_space))
+        epsilon_average_weight = np.zeros(len(epsilon_search_space))
+
+        for bandit_dict in self.bandits:
+            tau1_bandit = bandit_dict["tau1"]
+            tau2_bandit = bandit_dict["tau2"]
+            epsilon_bandit = bandit_dict["epsilon"]
+
+            tau1_indices = np.argmin(np.abs(tau1_bandit.search_space[:, None] - tau1_search_space), axis=0)
+            tau2_indices = np.argmin(np.abs(tau2_bandit.search_space[:, None] - tau2_search_space), axis=0)
+            epsilon_indices = np.argmin(np.abs(epsilon_bandit.search_space[:, None] - epsilon_search_space), axis=0)
+
+            if not only_index:
+                tau1_average_count += tau1_bandit.N[tau1_indices]
+                tau2_average_count += tau2_bandit.N[tau2_indices]
+                epsilon_average_count += epsilon_bandit.N[epsilon_indices]
+
+            tau1_average_weight += tau1_bandit.w[tau1_indices]
+            tau2_average_weight += tau2_bandit.w[tau2_indices]
+            epsilon_average_weight += epsilon_bandit.w[epsilon_indices]
+
+        tau1_average_count /= num_bandits
+        tau2_average_count /= num_bandits
+        epsilon_average_count /= num_bandits
+        tau1_average_weight /= num_bandits
+        tau2_average_weight /= num_bandits
+        epsilon_average_weight /= num_bandits
+
+        max_tau1 = tau1_search_space[np.argmax(tau1_average_weight)]
+        max_tau2 = tau2_search_space[np.argmax(tau2_average_weight)]
+        max_epsilon = epsilon_search_space[np.argmax(epsilon_average_weight)]
+
+        if only_index:
+            return max_tau1, max_tau2, max_epsilon
+        return (
+            max_tau1, max_tau2, max_epsilon,
+            tau1_average_count, tau2_average_count, epsilon_average_count,
+            tau1_average_weight, tau2_average_weight, epsilon_average_weight
+        )
 
 
     def get_all_indeces(self, num_envs):
@@ -129,16 +194,22 @@ class Bandits:
         return np.array(indeces)
 
 
-    def update_and_get_new_indeces(self, terminated_indeces, returns):
+    def update_and_get_data(self, data_collector, terminated_indeces, returns, terminated_envs):
         if terminated_indeces is None:
-            return 0
-        for _ in range(len(returns)):
-            tau1, tau2, epsilon = terminated_indeces[_]
-            g = returns[_]
-            self.update_bandits(tau1, tau2, epsilon, g)
-        self.save_bandits()
+            return None, None
+        data = None
+        if data_collector.frame_count >= self.config['per_min_frames']:
+            for _ in range(len(returns)):
+                tau1, tau2, epsilon = terminated_indeces[_]
+                g = returns[_]
+                self.update_bandits(tau1, tau2, epsilon, g)
+            self.save_bandits()
+            data = self.get_index_data()
         new_indeces = []
         all_candidates = self.get_candidates()
-        for _ in range(len(returns)):
-            new_indeces.append(self.sample_candidate(all_candidates))
-        return np.array(new_indeces)
+        for env in terminated_envs:
+            if (env >= self.config['num_envs'] - 2) and data_collector.frame_count >= self.config['per_min_frames']:
+                new_indeces.append(data[:3])
+            else:
+                new_indeces.append(self.sample_candidate(all_candidates))
+        return np.array(new_indeces), data

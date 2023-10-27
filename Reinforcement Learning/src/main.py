@@ -1,6 +1,3 @@
-import torch
-import json
-from configs import configs
 from environments import Environments
 from data_collector import DataCollector
 from metric import Metric
@@ -10,48 +7,35 @@ from actor import Actor
 from training import Training
 
 
-# env_name = "CartPole-v1"
-# env_name = "LunarLander-v2"
-env_name = "LaserHockey-v0"
+# env_name = 'CartPole-v1'
+env_name = 'LunarLander-v2'
+# env_name = 'LaserHockey-v0'
 
 load_run = None
-# load_run = 'env16,bs4,ss20,bb1,lr0.0003,d_o4,d_i20_Oct19-01-15-27'
+# load_run = 'n256,bs64,s20,lr0.001_Oct25-14-41-00_lr'
 
 # if load_run is specified only max_frames will be used
 train_parameters = {'max_frames': 10000000,
-                   'num_envs': 32,
-                   'batch_size': 8,
-                   'sequence_length': 20,
-                   'bootstrap_length': 1,
-                   'learning_rate': 3e-4,
-                   'd_push': 4,
-                   'd_pull': 20,
-                   'lr_finder': False}
+                    'lr_finder': False}
+
+abbreviation_dict = {
+                     'batch_size': 'b',
+                     'sequence_length': 's',
+                     'bootstrap_length': 'bb',
+                     'discount': 'd',
+                     # 'update_frequency': 'up',
+                     # 'reward_scaling_1': 'r1-',
+                     # 'reward_scaling_2': 'r2-',
+                     'learning_rate': 'lr',
+                     'add_on': None}
 
 
-def get_config(env_name, load_run, train_parameters):
-    if load_run is not None:
-        run_path = f'runs/{env_name}/{load_run}/hyperparameters.json'
-        with open(run_path, "r") as file:
-            config = json.load(file)
-        config['load_run'] = load_run
-        config['max_frames'] = config['trained_frames'] + train_parameters['max_frames']
-        return config
-    config = {key: train_parameters[key] if key in train_parameters else value for key, value in configs[env_name].items()}
-    if config['lr_finder']:
-        config['max_frames'] = config['warmup_steps'] * config['batch_size'] * config['sequence_length']
-    return config
-        
-
-config = get_config(env_name, load_run, train_parameters)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-environments = Environments(config, env_name)
-data_collector = DataCollector(config)
-metric = Metric(config, env_name)
-bandits = Bandits(config, metric)
-learner = Learner(config, metric, device)
-actor = Actor(config, metric, device)
-training = Training(config)
+training = Training(env_name, load_run, train_parameters, abbreviation_dict)
+environments = Environments(training)
+data_collector = DataCollector(training)
+metric = Metric(training)
+bandits = Bandits(training)
+learner = Learner(training)
+actor = Actor(training)
 
 training.run(environments, data_collector, metric, bandits, learner, actor)

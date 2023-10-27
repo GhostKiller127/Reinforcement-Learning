@@ -7,27 +7,30 @@ from architectures import TransformerModel
 
 
 class Actor:
-    def __init__(self, config, metric, device):
+    def __init__(self, training_class):
         self.count = 0
-        self.device = device
-        self.config = config
-        self.log_dir = f'{metric.log_dir}/models'
-        if config['architecture_params']['architecture'] == 'dense':
-            self.actor1 = DenseModel(config, device)
-            self.actor2 = DenseModel(config, device)
-        if config['architecture_params']['architecture'] == 'transformer':
-            self.actor1 = TransformerModel(config, device)
-            self.actor2 = TransformerModel(config, device)
+        self.device = training_class.device
+        self.config = training_class.config
+        self.log_dir = f'{training_class.log_dir}/models'
+        if self.config['architecture_params']['architecture'] == 'dense':
+            self.actor1 = DenseModel(self.config, self.device)
+            self.actor2 = DenseModel(self.config, self.device)
+        if self.config['architecture_params']['architecture'] == 'transformer':
+            self.actor1 = TransformerModel(self.config, self.device)
+            self.actor2 = TransformerModel(self.config, self.device)
         for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
             param1.requires_grad_(False)
             param2.requires_grad_(False)
-        self.pull_weights()
 
         
-    def pull_weights(self):
-        if self.count % self.config['d_push'] == 0:
-            self.actor1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
-            self.actor2.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
+    def pull_weights(self, learner=None, training=True):
+        if self.count % self.config['d_pull'] == 0:
+            if training:
+                self.actor1.load_state_dict(learner.learner1.state_dict())
+                self.actor2.load_state_dict(learner.learner2.state_dict())
+            else:
+                self.actor1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
+                self.actor2.load_state_dict(torch.load(f'{self.log_dir}/learner2.pth'))
         self.count += 1
 
 
@@ -47,16 +50,22 @@ class Actor:
         return policy
 
 
-    def get_action(self, policy, stochastic, random):
+    def get_actions(self, observations, indeces, stochastic=True, random=False, training=False):
+        policy = self.calculate_policy(observations, indeces)
         if random:
-            action = [self.env.single_action_space.sample() for _ in range(self.num_envs)]
-            action_prob = np.ones(action)
+            actions = [self.env.single_action_space.sample() for _ in range(self.config['num_envs'])]
+            action_probs = np.ones(actions)
         if stochastic:
             action_dist = dist.Categorical(policy)
-            action = action_dist.sample()
-            action_prob = policy.gather(1, action.unsqueeze(1))
+            actions = action_dist.sample()
+            action_probs = policy.gather(1, actions.unsqueeze(1))
         else:
-            _, action = policy.max(1)
-            action_prob = policy.gather(1, action.unsqueeze(1))
-        return action, action_prob
+            _, actions = policy.max(1)
+            action_probs = policy.gather(1, actions.unsqueeze(1))
+        if training:
+            _, greedy_actions = policy.max(1)
+            actions[-1] = greedy_actions[-1]
+        actions = actions.cpu().numpy()
+        action_probs = action_probs.cpu().numpy()
+        return actions, action_probs
     
