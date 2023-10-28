@@ -13,8 +13,6 @@ todo
                 add sequence - 1 times the first obs at the beginning of the sequence for gym
                 forward pass and train on whole sequence
         look at agent57 and other deepmind papers
-        read r2d2 ff vs deep, impala
-        target network
 
 plots
     save data plots on file in plots folder, because tensorboard files get too big and too slow to load
@@ -22,9 +20,3 @@ plots
     if saving takes long, save every 50.000 frames
 
 runs
-    lunarlander
-        doubled r2 to 0.8, maybe larger discount needed
-        rerun: doubled r2 to 0.8, per
-        increase discount factor to .995 then .997
-    cartpole
-        rerun with per

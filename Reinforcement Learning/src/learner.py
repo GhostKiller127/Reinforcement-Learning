@@ -6,6 +6,7 @@ from architectures import DenseModel
 from architectures import TransformerModel
 
 
+
 class Learner:
     def __init__(self, training_class):
         self.update_count = 0
@@ -16,9 +17,16 @@ class Learner:
         if self.config['architecture_params']['architecture'] == 'dense':
             self.learner1 = DenseModel(self.config, self.device)
             self.learner2 = DenseModel(self.config, self.device)
+            self.target1 = DenseModel(self.config, self.device)
+            self.target2 = DenseModel(self.config, self.device)
         if self.config['architecture_params']['architecture'] == 'transformer':
             self.learner1 = TransformerModel(self.config, self.device)
             self.learner2 = TransformerModel(self.config, self.device)
+            self.target1 = TransformerModel(self.config, self.device)
+            self.target2 = TransformerModel(self.config, self.device)
+        for param1, param2 in zip(self.target1.parameters(), self.target2.parameters()):
+            param1.requires_grad_(False)
+            param2.requires_grad_(False)
         initial_lr, end_lr, gamma = self.get_scheduler_args()
         self.optimizer1 = torch.optim.AdamW(self.learner1.parameters(), lr=initial_lr, eps=self.config['adamw_epsilon'])
         self.optimizer2 = torch.optim.AdamW(self.learner2.parameters(), lr=initial_lr, eps=self.config['adamw_epsilon'])
@@ -29,6 +37,7 @@ class Learner:
             self.push_weights()
         else:
             self.pull_weights()
+        self.update_target_weights()
 
     
     def get_scheduler_args(self):
@@ -56,9 +65,17 @@ class Learner:
         self.optimizer2.load_state_dict(torch.load(f'{self.log_dir}/optimizer2.pth'))
 
 
+    def update_target_weights(self):
+        if self.update_count % self.config['d_target'] == 0:
+            self.target1.load_state_dict(self.learner1.state_dict())
+            self.target2.load_state_dict(self.learner2.state_dict())
+
+
     def calculate_values(self, batch):
         v1, a1 = self.learner1(batch['o'])
         v2, a2 = self.learner2(batch['o'])
+        v1_, a1_ = self.target1(batch['o'])
+        v2_, a2_ = self.target2(batch['o'])
 
         i = torch.tensor(batch['i'], dtype=torch.float32).to(self.device)
         a = torch.tensor(batch['a'], dtype=torch.int64).to(self.device).unsqueeze(2)
@@ -67,16 +84,28 @@ class Learner:
         epsilon = i[:,:,2].unsqueeze(2)
         softmax_1 = F.softmax(a1 * tau1, dim=2)
         softmax_2 = F.softmax(a2 * tau2, dim=2)
+        softmax_1_ = F.softmax(a1_ * tau1, dim=2)
+        softmax_2_ = F.softmax(a2_ * tau2, dim=2)
         policy1 = epsilon * softmax_1 + (1 - epsilon) * softmax_2.detach()
         policy2 = epsilon * softmax_1.detach() + (1 - epsilon) * softmax_2
+        policy_ = epsilon * softmax_1_ + (1 - epsilon) * softmax_2_
         p1 = policy1.gather(dim=2, index=a)
         p2 = policy2.gather(dim=2, index=a)
 
-        a1 = a1.gather(dim=2, index=a) + torch.sum(policy1.detach() * a1, dim=2).unsqueeze(2)
-        a2 = a2.gather(dim=2, index=a) + torch.sum(policy2.detach() * a2, dim=2).unsqueeze(2)
+        a1 = a1.gather(dim=2, index=a).add_(torch.sum(policy1.detach() * a1, dim=2).unsqueeze(2))
+        a2 = a2.gather(dim=2, index=a).add_(torch.sum(policy2.detach() * a2, dim=2).unsqueeze(2))
         q1 = a1 + v1.detach()
         q2 = a2 + v2.detach()
-        return v1, v2, q1, q2, p1, p2
+        a1_.add_(torch.sum(policy_ * a1_, dim=2).unsqueeze(2))
+        a2_.add_(torch.sum(policy_ * a2_, dim=2).unsqueeze(2))
+        q1_ = a1_ + v1_
+        q2_ = a2_ + v2_
+        q1_m = torch.sum(policy1.detach() * q1_, dim=2).unsqueeze(2)
+        q2_m = torch.sum(policy2.detach() * q2_, dim=2).unsqueeze(2)
+        q1_ = q1_.gather(dim=2, index=a)
+        q2_ = q2_.gather(dim=2, index=a)
+
+        return v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m
     
 
     def scale_value1(self, x):
@@ -84,11 +113,9 @@ class Learner:
         x = np.where(np.sign(x) > 0, x_log * 2, x_log * -1)
         return x
 
-
     def scale_value2(self, x):
         x = (np.sign(x) * ((np.abs(x) + 1.)**(1/2) - 1.) + 0.001 * x) * self.config['reward_scaling_2']
         return x
-
 
     def invert_scale1(self, h):
         h = h / self.config['reward_scaling_1']
@@ -96,80 +123,114 @@ class Learner:
         h_ = np.sign(h) * (np.exp(h_) - 1)
         return h_
 
-
     def invert_scale2(self, h):
         h = h / self.config['reward_scaling_2']
         h = np.sign(h) * ((((1 + 4*0.001*(np.abs(h) + 1 + 0.001))**(1/2) - 1) / (2*0.001))**2 - 1)
         return h
+    
 
-
-    def calculate_retrace_targets(self, q1, q2, p, batch):
-        q1_ = q1.detach().cpu().numpy().squeeze()
-        q2_ = q2.detach().cpu().numpy().squeeze()
-        q1 = self.invert_scale1(q1_)
-        q2 = self.invert_scale2(q2_)
+    def calculate_retrace_targets(self, q1, q2, q1_, q2_, q1_m, q2_m, p, batch):
+        q1 = q1.detach().cpu().numpy().squeeze()
+        q2 = q2.detach().cpu().numpy().squeeze()
+        q1_ = q1_.cpu().numpy().squeeze()
+        q2_ = q2_.cpu().numpy().squeeze()
+        q1_ = self.invert_scale1(q1_)
+        q2_ = self.invert_scale2(q2_)
+        q1_m = q1_m.cpu().numpy().squeeze()
+        q2_m = q2_m.cpu().numpy().squeeze()
+        q1_m = self.invert_scale1(q1_m)
+        q2_m = self.invert_scale2(q2_m)
         p = p.detach().cpu().numpy()
         c = np.minimum(p / batch['a_p'], self.config['c_clip']).squeeze()
+        
+        c = np.lib.stride_tricks.sliding_window_view(c[:, :-2], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze()
+        c = np.transpose(c, (1, 0, 2)).copy()
+        c[:,:,0] = 1
+        c = np.cumprod(c, axis=2)
+        gamma = self.config['discount'] * np.ones((self.config['batch_size'], self.config['sequence_length'], self.config['bootstrap_length']))
+        gamma[:,:,0] = 1
+        gamma = np.cumprod(gamma, axis=2)
 
-        rt1 = np.zeros((self.config['batch_size'], self.config['sequence_length']))
-        rt2 = np.zeros((self.config['batch_size'], self.config['sequence_length']))
-        rtd1 = np.zeros((self.config['batch_size'], self.config['sequence_length']))
-        rtd2 = np.zeros((self.config['batch_size'], self.config['sequence_length']))
-        for b in range(self.config['batch_size']):
-            for t in range(self.config['sequence_length']):
-                c_tk = 1
-                td1, td2 = 0, 0
-                for k in range(self.config['bootstrap_length']):
-                    if k >= 1:
-                        c_tk *= c[b,t+k]
-                    if batch['d'][b,t+k] or batch['t'][b,t+k]:
-                        td1 += self.config['discount']**k * c_tk * (batch['r'][b,t+k] - q1[b,t+k])
-                        td2 += self.config['discount']**k * c_tk * (batch['r'][b,t+k] - q2[b,t+k])
-                        break
-                    td1 += self.config['discount']**k * c_tk * (batch['r'][b,t+k] + self.config['discount'] * q1[b,t+k+1] - q1[b,t+k])
-                    td2 += self.config['discount']**k * c_tk * (batch['r'][b,t+k] + self.config['discount'] * q2[b,t+k+1] - q2[b,t+k])
-                rt1[b,t] = q1[b,t] + td1
-                rt2[b,t] = q2[b,t] + td2
+        mask = np.logical_or(batch['d'], batch['t'])[:, :-2]
+        mask = np.lib.stride_tricks.sliding_window_view(mask, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        mask = np.cumsum(mask, axis=2)
+        mask_e = np.array(mask, dtype=bool)
+        mask_t = np.roll(mask_e, shift=1, axis=2)
+        mask_t[:,:,0] = False
+        mask_e = np.invert(mask_e)
+        mask_t = np.invert(mask_t)
+
+        td1_t = batch['r'][:, :-2] - q1_[:, :-2]
+        td2_t = batch['r'][:, :-2] - q2_[:, :-2]
+        td1_e = self.config['discount'] * q1_m[:, 1:-1]
+        td2_e = self.config['discount'] * q2_m[:, 1:-1]
+        td1_t = np.lib.stride_tricks.sliding_window_view(td1_t, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        td2_t = np.lib.stride_tricks.sliding_window_view(td2_t, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        td1_e = np.lib.stride_tricks.sliding_window_view(td1_e, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        td2_e = np.lib.stride_tricks.sliding_window_view(td2_e, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+
+        td1 = td1_t * mask_t + td1_e * mask_e
+        td2 = td2_t * mask_t + td2_e * mask_e
+        rt1 = q1_[:, :self.config['sequence_length']] + np.sum(gamma * c * td1, axis=2)
+        rt2 = q2_[:, :self.config['sequence_length']] + np.sum(gamma * c * td2, axis=2)
+
         rt1 = self.scale_value1(rt1)
         rt2 = self.scale_value2(rt2)
-        rtd1 = rt1 - q1_[:,: - self.config['bootstrap_length'] - 1]
-        rtd2 = rt2 - q2_[:,: - self.config['bootstrap_length'] - 1]
+        rtd1 = rt1 - q1[:, :self.config['sequence_length']]
+        rtd2 = rt2 - q2[:, :self.config['sequence_length']]
         rt1 = torch.tensor(rt1).to(self.device).unsqueeze(2)
         rt2 = torch.tensor(rt2).to(self.device).unsqueeze(2)
         return rt1, rt2, rtd1, rtd2
     
-
-    def calculate_vtrace_targets(self, v1, v2, p, batch):
-        v1 = v1.detach().cpu().numpy().squeeze()
-        v2 = v2.detach().cpu().numpy().squeeze()
-        v1 = self.invert_scale1(v1)
-        v2 = self.invert_scale2(v2)
+    
+    def calculate_vtrace_targets(self, v1_, v2_, p, batch):
+        v1_ = v1_.cpu().numpy().squeeze()
+        v2_ = v2_.cpu().numpy().squeeze()
+        v1_ = self.invert_scale1(v1_)
+        v2_ = self.invert_scale2(v2_)
         p = p.detach().cpu().numpy()
         c = np.minimum(p / batch['a_p'], self.config['c_clip']).squeeze()
-        rho = np.minimum(p / batch['a_p'], self.config['rho_clip']).squeeze()
-        
-        vt1 = np.zeros((self.config['batch_size'], self.config['sequence_length'] + 1))
-        vt2 = np.zeros((self.config['batch_size'], self.config['sequence_length'] + 1))
-        pt1 = np.zeros((self.config['batch_size'], self.config['sequence_length']))
-        pt2 = np.zeros((self.config['batch_size'], self.config['sequence_length']))
-        for b in range(self.config['batch_size']):
-            for t in range(self.config['sequence_length'] + 1):
-                c_tk = 1
-                td1, td2 = 0, 0
-                for k in range(self.config['bootstrap_length']):
-                    if k >= 1:
-                        c_tk *= c[b,t+k-1]
-                    if batch['d'][b,t+k] or batch['t'][b,t+k]:
-                        td1 += self.config['discount']**k * c_tk * rho[b,t+k] * (batch['r'][b,t+k] - v1[b,t+k])
-                        td2 += self.config['discount']**k * c_tk * rho[b,t+k] * (batch['r'][b,t+k] - v2[b,t+k])
-                        break
-                    td1 += self.config['discount']**k * c_tk * rho[b,t+k] * (batch['r'][b,t+k] + self.config['discount'] * v1[b,t+k+1] - v1[b,t+k])
-                    td2 += self.config['discount']**k * c_tk * rho[b,t+k] * (batch['r'][b,t+k] + self.config['discount'] * v2[b,t+k+1] - v2[b,t+k])
-                vt1[b,t] = v1[b,t] + td1
-                vt2[b,t] = v2[b,t] + td2
-                if t > 0:
-                    pt1[b,t-1] = rho[b,t-1] * (batch['r'][b,t-1] + self.config['discount'] * vt1[b,t] - v1[b,t-1])
-                    pt2[b,t-1] = rho[b,t-1] * (batch['r'][b,t-1] + self.config['discount'] * vt2[b,t] - v2[b,t-1])
+        rho_t = np.minimum(p / batch['a_p'], self.config['rho_clip']).squeeze()
+
+        rho = np.lib.stride_tricks.sliding_window_view(rho_t[:, :-1], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        c = np.lib.stride_tricks.sliding_window_view(c[:, :-1], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze()
+        c = np.transpose(c, (1, 0, 2)).copy()
+        c = np.roll(c, shift=1, axis=2)
+        c[:,:,0] = 1
+        c = np.cumprod(c, axis=2)
+
+        gamma = self.config['discount'] * np.ones((self.config['batch_size'], self.config['sequence_length'] + 1, self.config['bootstrap_length']))
+        gamma[:,:,0] = 1
+        gamma = np.cumprod(gamma, axis=2)
+
+        mask = np.logical_or(batch['d'], batch['t'])[:, :-1]
+        mask = np.lib.stride_tricks.sliding_window_view(mask, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        mask = np.cumsum(mask, axis=2)
+        mask_e = np.array(mask, dtype=bool)
+        mask_t = np.roll(mask_e, shift=1, axis=2)
+        mask_t[:,:,0] = False
+        mask_e = np.invert(mask_e)
+        mask_t = np.invert(mask_t)
+
+        td1_t = batch['r'][:, :-1] - v1_[:, :-1]
+        td2_t = batch['r'][:, :-1] - v2_[:, :-1]
+        td1_e = self.config['discount'] * v1_[:, 1:]
+        td2_e = self.config['discount'] * v2_[:, 1:]
+        td1_t = np.lib.stride_tricks.sliding_window_view(td1_t, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        td2_t = np.lib.stride_tricks.sliding_window_view(td2_t, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        td1_e = np.lib.stride_tricks.sliding_window_view(td1_e, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+        td2_e = np.lib.stride_tricks.sliding_window_view(td2_e, (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
+
+        td1 = td1_t * mask_t + td1_e * mask_e
+        td2 = td2_t * mask_t + td2_e * mask_e
+        vt1 = v1_[:, :self.config['sequence_length'] + 1] + np.sum(gamma * c * rho * td1, axis=2)
+        vt2 = v2_[:, :self.config['sequence_length'] + 1] + np.sum(gamma * c * rho * td2, axis=2)
+
+        pt1 = (rho_t[:, :self.config['sequence_length']] * 
+               (batch['r'][:, :self.config['sequence_length']] + self.config['discount'] * vt1[:, 1:] - v1_[:, :self.config['sequence_length']]))
+        pt2 = (rho_t[:, :self.config['sequence_length']] * 
+               (batch['r'][:, :self.config['sequence_length']] + self.config['discount'] * vt2[:, 1:] - v2_[:, :self.config['sequence_length']]))
+
         vt1 = self.scale_value1(vt1)
         vt2 = self.scale_value2(vt2)
         pt1 = self.scale_value1(pt1)
@@ -182,12 +243,12 @@ class Learner:
 
 
     def calculate_losses(self, v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2):
-        v_loss1 = torch.mean((vt1 - v1[:,:-self.config['bootstrap_length']-1])**2)
-        v_loss2 = torch.mean((vt2 - v2[:,:-self.config['bootstrap_length']-1])**2)
-        q_loss1 = torch.mean((rt1 - q1[:,:-self.config['bootstrap_length']-1])**2)
-        q_loss2 = torch.mean((rt2 - q2[:,:-self.config['bootstrap_length']-1])**2)
-        p_loss1 = torch.mean(pt1 * -torch.log(p1[:,:-self.config['bootstrap_length']-1] + 1e-6))
-        p_loss2 = torch.mean(pt2 * -torch.log(p2[:,:-self.config['bootstrap_length']-1] + 1e-6))
+        v_loss1 = torch.mean((vt1 - v1[:,:self.config['sequence_length']])**2)
+        v_loss2 = torch.mean((vt2 - v2[:,:self.config['sequence_length']])**2)
+        q_loss1 = torch.mean((rt1 - q1[:,:self.config['sequence_length']])**2)
+        q_loss2 = torch.mean((rt2 - q2[:,:self.config['sequence_length']])**2)
+        p_loss1 = torch.mean(pt1 * -torch.log(p1[:,:self.config['sequence_length']] + 1e-6))
+        p_loss2 = torch.mean(pt2 * -torch.log(p2[:,:self.config['sequence_length']] + 1e-6))
         return v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
     
 
@@ -210,6 +271,7 @@ class Learner:
             self.scheduler2.step()
         self.update_count += 1
         self.push_weights()
+        self.update_target_weights()
         return loss1, loss2, gradient_norm1, gradient_norm2, learning_rate
 
 
@@ -224,12 +286,12 @@ class Learner:
             batched_sequences = data_collector.load_batched_sequences()
         losses = None
         for batch in batched_sequences:
-            v1, v2, q1, q2, p1, p2 = self.calculate_values(batch)
-            rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, p1, batch)
-            vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1, v2, p1, batch)
-            if self.config['per_experience_replay']:
-                data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
+            v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = self.calculate_values(batch)
+            rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, q1_, q2_, q1_m, q2_m, p1, batch)
+            vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1_, v2_, p1, batch)
             v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = self.calculate_losses(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2)
             loss1, loss2, gradient_norm1, gradient_norm2, learning_rate = self.update_weights(v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
+            if self.config['per_experience_replay']:
+                data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
         return losses
