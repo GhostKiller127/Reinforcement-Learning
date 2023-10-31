@@ -107,7 +107,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 600
+        self.max_timesteps = 1000
 
         self.closest_to_goal_dist = 1000
 
@@ -511,9 +511,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             if self.winner == 0: # tie
                 r += 0
             elif self.winner == 1: # you won
-                r += 10
+                r += 50
             else: # opponent won
-                r -= 10
+                r -= 50
 
         return r
 
@@ -528,10 +528,11 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             factor = max_reward / (max_dist*self.max_timesteps/2)
             # reward_closeness_to_puck += dist_to_puck*factor # Proxy reward for being close to puck in the own half
             reward_closeness_to_puck = -0.005 * dist_to_puck
+        
         # Proxy reward: touch puck
         reward_touch_puck = 0.
         if self.player1_contact_puck:
-            reward_touch_puck = 1.
+            reward_touch_puck = 1
 
         # puck is flying in the right direction
         reward_puck_direction = 0

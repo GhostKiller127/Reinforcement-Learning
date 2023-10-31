@@ -14,16 +14,16 @@ class Learner:
         self.device = training_class.device
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
-        if self.config['architecture_params']['architecture'] == 'dense':
-            self.learner1 = DenseModel(self.config, self.device)
-            self.learner2 = DenseModel(self.config, self.device)
-            self.target1 = DenseModel(self.config, self.device)
-            self.target2 = DenseModel(self.config, self.device)
-        if self.config['architecture_params']['architecture'] == 'transformer':
-            self.learner1 = TransformerModel(self.config, self.device)
-            self.learner2 = TransformerModel(self.config, self.device)
-            self.target1 = TransformerModel(self.config, self.device)
-            self.target2 = TransformerModel(self.config, self.device)
+        if self.config['architecture'] == 'dense':
+            self.learner1 = DenseModel(self.config['dense_params'], self.device)
+            self.learner2 = DenseModel(self.config['dense_params'], self.device)
+            self.target1 = DenseModel(self.config['dense_params'], self.device)
+            self.target2 = DenseModel(self.config['dense_params'], self.device)
+        if self.config['architecture'] == 'transformer':
+            self.learner1 = TransformerModel(self.config['transformer_params'], self.device)
+            self.learner2 = TransformerModel(self.config['transformer_params'], self.device)
+            self.target1 = TransformerModel(self.config['transformer_params'], self.device)
+            self.target2 = TransformerModel(self.config['transformer_params'], self.device)
         for param1, param2 in zip(self.target1.parameters(), self.target2.parameters()):
             param1.requires_grad_(False)
             param2.requires_grad_(False)
@@ -47,7 +47,7 @@ class Learner:
         if self.config["lr_finder"]:
             return 1e-8, 1e-2, 1 / self.config['warmup_steps']
         self.config['warmup_steps'] = int(self.config['warmup_steps'] / 4)
-        return self.config["learning_rate"] / 100, self.config["learning_rate"], 1 / self.config['warmup_steps']
+        return self.config["learning_rate"] / 1e3, self.config["learning_rate"], 1 / self.config['warmup_steps']
 
 
     def push_weights(self):
@@ -276,22 +276,15 @@ class Learner:
 
 
     def check_and_update(self, data_collector):
-        if self.config['per_experience_replay']:
-            if self.step_count % self.config['update_frequency'] == 0 and data_collector.frame_count >= self.config['per_min_frames']:
-                batched_sequences, sequence_indeces = data_collector.load_per_batched_sequences()
-            else:
-                batched_sequences = []
-            self.step_count += 1
-        else:
-            batched_sequences = data_collector.load_batched_sequences()
         losses = None
-        for batch in batched_sequences:
-            v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = self.calculate_values(batch)
-            rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, q1_, q2_, q1_m, q2_m, p1, batch)
-            vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1_, v2_, p1, batch)
+        if self.step_count % self.config['update_frequency'] == 0 and data_collector.frame_count >= self.config['per_min_frames']:
+            batched_sequences, sequence_indeces = data_collector.load_batched_sequences()
+            v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = self.calculate_values(batched_sequences)
+            rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, q1_, q2_, q1_m, q2_m, p1, batched_sequences)
+            vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1_, v2_, p1, batched_sequences)
             v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = self.calculate_losses(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2)
             loss1, loss2, gradient_norm1, gradient_norm2, learning_rate = self.update_weights(v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
-            if self.config['per_experience_replay']:
-                data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
+            data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
+        self.step_count += 1
         return losses

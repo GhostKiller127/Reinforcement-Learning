@@ -1,7 +1,6 @@
 import json
 import torch
 import datetime
-import numpy as np
 from configs import configs
 
 
@@ -57,8 +56,7 @@ class Training:
             converted_actions = environments.convert_actions(actions, infos)
             next_observations, rewards, terminated, truncated, infos = environments.step(converted_actions)
 
-            data_collector.add_step_data(o=observations, a=actions, a_p=action_probs, i=indeces, r=rewards, d=terminated, t=truncated)
-            data_collector.check_save_sequence()
+            data_collector.add_data(o=observations, a=actions, a_p=action_probs, i=indeces, r=rewards, d=terminated, t=truncated)
             terminated_indeces, returns, terminated_envs = data_collector.check_done_and_return()
             new_indeces, index_data = bandits.update_and_get_data(data_collector, terminated_indeces, returns, terminated_envs)
             indeces[terminated_envs] = new_indeces

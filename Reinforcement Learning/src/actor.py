@@ -12,12 +12,12 @@ class Actor:
         self.device = training_class.device
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
-        if self.config['architecture_params']['architecture'] == 'dense':
-            self.actor1 = DenseModel(self.config, self.device)
-            self.actor2 = DenseModel(self.config, self.device)
-        if self.config['architecture_params']['architecture'] == 'transformer':
-            self.actor1 = TransformerModel(self.config, self.device)
-            self.actor2 = TransformerModel(self.config, self.device)
+        if self.config['architecture'] == 'dense':
+            self.actor1 = DenseModel(self.config['dense_params'], self.device)
+            self.actor2 = DenseModel(self.config['dense_params'], self.device)
+        if self.config['architecture'] == 'transformer':
+            self.actor1 = TransformerModel(self.config['transformer_params'], self.device)
+            self.actor2 = TransformerModel(self.config['transformer_params'], self.device)
         for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
             param1.requires_grad_(False)
             param2.requires_grad_(False)
@@ -54,7 +54,7 @@ class Actor:
         policy = self.calculate_policy(observations, indeces)
         if random:
             actions = [self.env.single_action_space.sample() for _ in range(self.config['num_envs'])]
-            action_probs = np.ones(actions)
+            action_probs = np.ones(actions) / self.config['num_envs']
         if stochastic:
             action_dist = dist.Categorical(policy)
             actions = action_dist.sample()

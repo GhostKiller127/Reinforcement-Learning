@@ -13,10 +13,6 @@ class Metric:
             json.dump(self.config, file)
     
 
-    def replace_keys(self, abbreviation_dict):
-        return {abbreviation_dict[key]: value for key, value in self.config.items() if key in abbreviation_dict}
-
-
     def add_return(self, data_collector, returns, terminated_envs, played_frames):
         if returns is None:
             return
