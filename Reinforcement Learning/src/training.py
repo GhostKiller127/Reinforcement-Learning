@@ -60,6 +60,7 @@ class Training:
             terminated_indeces, returns, terminated_envs = data_collector.check_done_and_return()
             new_indeces, index_data = bandits.update_and_get_data(data_collector, terminated_indeces, returns, terminated_envs)
             indeces[terminated_envs] = new_indeces
+            
             losses = learner.check_and_update(data_collector)
 
             self.played_frames += self.num_envs

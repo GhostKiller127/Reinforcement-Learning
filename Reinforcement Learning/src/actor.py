@@ -35,8 +35,9 @@ class Actor:
 
 
     def calculate_policy(self, observations, indices):
-        v1, a1 = self.actor1(observations)
-        v2, a2 = self.actor2(observations)
+        with torch.amp.autocast(device_type='cuda', dtype=torch.float32):
+            v1, a1 = self.actor1(observations)
+            v2, a2 = self.actor2(observations)
 
         indices = torch.tensor(indices, dtype=torch.float32).to(self.device)
         tau1 = indices[:,0].unsqueeze(1)
@@ -45,7 +46,7 @@ class Actor:
 
         softmax_1 = F.softmax(a1 * tau1, dim=1)
         softmax_2 = F.softmax(a2 * tau2, dim=1)
-        
+    
         policy = epsilon * softmax_1 + (1 - epsilon) * softmax_2
         return policy
 
@@ -55,7 +56,7 @@ class Actor:
         if random:
             actions = [self.env.single_action_space.sample() for _ in range(self.config['num_envs'])]
             action_probs = np.ones(actions) / self.config['num_envs']
-        if stochastic:
+        elif stochastic:
             action_dist = dist.Categorical(policy)
             actions = action_dist.sample()
             action_probs = policy.gather(1, actions.unsqueeze(1))

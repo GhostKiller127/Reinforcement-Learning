@@ -28,12 +28,12 @@ class Metric:
         if index_data is None:
             return
         tau1, tau2, epsilon, n1, n2, n3, w1, w2, w3 = index_data
-        self.writer.add_histogram('bandit index count/tau1', n1, global_step=played_frames)
-        self.writer.add_histogram('bandit index count/tau2', n2, global_step=played_frames)
-        self.writer.add_histogram('bandit index count/epsilon', n3, global_step=played_frames)
-        self.writer.add_histogram('bandit index weight/tau1', w1, global_step=played_frames)
-        self.writer.add_histogram('bandit index weight/tau2', w2, global_step=played_frames)
-        self.writer.add_histogram('bandit index weight/epsilon', w3, global_step=played_frames)
+        # self.writer.add_histogram('bandit index count/tau1', n1, global_step=played_frames)
+        # self.writer.add_histogram('bandit index count/tau2', n2, global_step=played_frames)
+        # self.writer.add_histogram('bandit index count/epsilon', n3, global_step=played_frames)
+        # self.writer.add_histogram('bandit index weight/tau1', w1, global_step=played_frames)
+        # self.writer.add_histogram('bandit index weight/tau2', w2, global_step=played_frames)
+        # self.writer.add_histogram('bandit index weight/epsilon', w3, global_step=played_frames)
         self.writer.add_scalar('bandit/max_tau1', tau1, global_step=played_frames)
         self.writer.add_scalar('bandit/max_tau2', tau2, global_step=played_frames)
         self.writer.add_scalar('bandit/max_epsilon', epsilon, global_step=played_frames)

@@ -8,24 +8,23 @@ from training import Training
 
 
 # env_name = 'CartPole-v1'
-env_name = 'LunarLander-v2'
-# env_name = 'LaserHockey-v0'
+# env_name = 'LunarLander-v2'
+env_name = 'LaserHockey-v0'
 
-load_run = None
-# load_run = 'n256,bs64,s20,lr0.001_Oct25-14-41-00_lr'
+# load_run = None
+load_run = 'n4096,b256,s100,bb100,d_t1000,g0.99,lr0.001_Nov27-02-10-25'
 
 # if load_run is specified only max_frames will be used
-train_parameters = {'max_frames': 10000000,
+train_parameters = {'max_frames': 100000000,
                     'lr_finder': False}
 
 abbreviation_dict = {
+                     'num_envs': 'n',
                      'batch_size': 'b',
                      'sequence_length': 's',
                      'bootstrap_length': 'bb',
-                     'discount': 'd',
-                     # 'update_frequency': 'up',
-                     # 'reward_scaling_1': 'r1-',
-                     # 'reward_scaling_2': 'r2-',
+                     'd_target': 'd_t',
+                     'discount': 'g',
                      'learning_rate': 'lr',
                      'add_on': None}
 

@@ -15,20 +15,9 @@ optimizations
         learner and/or data collector
             add min_sequence_length - 1 times the first obs at the beginning of the sequence for gym
             forward pass and train on whole sequence
-    optimize whole code repository
+    optimize code
         how come some gpu memory is given back after execution, and some not?
-        bandits
-            predefine numpy arrays, calculate vectorized
-        data collector
-            save state for continued training
-            when loading, collecting samples is no longer needed
-        learner
-    deepmind papers
-    saved workona papers
-    batch size finder
+        bandit: little overhead for complicated environments
+    read saved papers
+    add playing against agents
 
-runs
-    laserhockey
-        max_steps = 1000, reward = 50
-        increase actors
-        maybe increase batch size & lr and decrease d_target

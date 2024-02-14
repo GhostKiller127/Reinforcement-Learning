@@ -5,11 +5,22 @@ import numpy as np
 class DataCollector:
     def __init__(self, training_class):
         self.config = training_class.config
-        self.env_return = np.zeros(self.config['num_envs'])
+        self.log_dir = f'{training_class.log_dir}/data_collector.npz'
         self.max_sequences = self.get_max_sequences()
-        self.priorities = np.zeros(self.max_sequences)
         self.sequence_length = self.config['sequence_length'] + self.config['bootstrap_length'] + 1
         self.reused_length = self.sequence_length - int(self.config['sequence_length'] / self.config['sample_reuse'])
+        self.initialize_data_collector()
+        if self.config['load_run'] is not None:
+            self.load_data_collector()
+        self.sequence_data = {'o': self.obsveration_sequence, 'a': self.action_sequence, 'a_p': self.action_probs_sequence, 'i': self.index_sequence,
+                              'r': self.reward_sequence, 'd': self.done_sequence, 't': self.truncated_sequence}
+        self.all_data = {'o': self.obsveration_data, 'a': self.action_data, 'a_p': self.action_probs_data, 'i': self.index_data,
+                         'r': self.reward_data, 'd': self.done_data, 't': self.truncated_data}
+
+
+    def initialize_data_collector(self):
+        self.env_return = np.zeros(self.config['num_envs'])
+        self.priorities = np.zeros(self.max_sequences)
         self.step_count = 0
         self.sequence_count = 0
         self.frame_count = 0
@@ -21,8 +32,6 @@ class DataCollector:
         self.reward_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
         self.done_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
         self.truncated_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
-        self.sequence_data = {'o': self.obsveration_sequence, 'a': self.action_sequence, 'a_p': self.action_probs_sequence, 'i': self.index_sequence,
-                              'r': self.reward_sequence, 'd': self.done_sequence, 't': self.truncated_sequence}
 
         self.obsveration_data = np.zeros((self.max_sequences, self.sequence_length, self.config['dense_params']['input_dim']))
         self.action_data = np.zeros((self.max_sequences, self.sequence_length))
@@ -31,10 +40,36 @@ class DataCollector:
         self.reward_data = np.zeros((self.max_sequences, self.sequence_length))
         self.done_data = np.zeros((self.max_sequences, self.sequence_length))
         self.truncated_data = np.zeros((self.max_sequences, self.sequence_length))
-        self.all_data = {'o': self.obsveration_data, 'a': self.action_data, 'a_p': self.action_probs_data, 'i': self.index_data,
-                         'r': self.reward_data, 'd': self.done_data, 't': self.truncated_data}
-
     
+
+    def save_data_collector(self):
+        np.savez(self.log_dir,
+            priorities=self.priorities,
+            sequence_count=self.sequence_count,
+            frame_count=self.frame_count,
+            obsveration_data=self.obsveration_data,
+            action_data=self.action_data,
+            action_probs_data=self.action_probs_data,
+            index_data=self.index_data,
+            reward_data=self.reward_data,
+            done_data=self.done_data,
+            truncated_data=self.truncated_data)
+
+
+    def load_data_collector(self):
+        data = np.load(self.log_dir)
+        self.priorities = data['priorities']
+        self.sequence_count = data['sequence_count']
+        self.frame_count = data['frame_count']
+        self.obsveration_data = data['obsveration_data']
+        self.action_data = data['action_data']
+        self.action_probs_data = data['action_probs_data']
+        self.index_data = data['index_data']
+        self.reward_data = data['reward_data']
+        self.done_data = data['done_data']
+        self.truncated_data = data['truncated_data']
+    
+
     def get_max_sequences(self):
         max_sequences = int(self.config['per_buffer_size'] / self.config['sequence_length'])
         if max_sequences % self.config['num_envs'] == 0:
@@ -64,6 +99,8 @@ class DataCollector:
             for _, value in self.sequence_data.items():
                 value[:, :self.reused_length] = value[:, -self.reused_length:]
             self.step_count = self.reused_length
+            if (self.sequence_count / self.config['num_envs']) % int(0.1 * self.max_sequences / self.config['num_envs']) == 0 and not self.config['lr_finder']:
+                self.save_data_collector()
     
 
     def check_done_and_return(self):

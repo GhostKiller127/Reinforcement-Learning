@@ -14,6 +14,7 @@ class Learner:
         self.device = training_class.device
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.config['mixed_precision'])
         if self.config['architecture'] == 'dense':
             self.learner1 = DenseModel(self.config['dense_params'], self.device)
             self.learner2 = DenseModel(self.config['dense_params'], self.device)
@@ -253,16 +254,22 @@ class Learner:
     
 
     def update_weights(self, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2):
-        loss1 = ((self.config['v_loss_scaling'] * v_loss1 + self.config['q_loss_scaling'] * q_loss1 + self.config['p_loss_scaling'] * p_loss1) /
-                 (self.config['v_loss_scaling'] + self.config['q_loss_scaling'] + self.config['p_loss_scaling']))
-        loss2 = ((self.config['v_loss_scaling'] * v_loss2 + self.config['q_loss_scaling'] * q_loss2 + self.config['p_loss_scaling'] * p_loss2) /
-                 (self.config['v_loss_scaling'] + self.config['q_loss_scaling'] + self.config['p_loss_scaling']))
-        loss1.backward()
-        loss2.backward()
+        with torch.amp.autocast(device_type='cuda', dtype=torch.float32):
+            loss1 = ((self.config['v_loss_scaling'] * v_loss1 + self.config['q_loss_scaling'] * q_loss1 + self.config['p_loss_scaling'] * p_loss1) /
+                    (self.config['v_loss_scaling'] + self.config['q_loss_scaling'] + self.config['p_loss_scaling']))
+            loss2 = ((self.config['v_loss_scaling'] * v_loss2 + self.config['q_loss_scaling'] * q_loss2 + self.config['p_loss_scaling'] * p_loss2) /
+                    (self.config['v_loss_scaling'] + self.config['q_loss_scaling'] + self.config['p_loss_scaling']))
+        self.scaler.scale(loss1).backward()
+        self.scaler.scale(loss2).backward()
+        # loss1.backward()
+        # loss2.backward()
         gradient_norm1 = torch.nn.utils.clip_grad_norm_(self.learner1.parameters(), self.config['adamw_clip_norm'])
         gradient_norm2 = torch.nn.utils.clip_grad_norm_(self.learner2.parameters(), self.config['adamw_clip_norm'])
-        self.optimizer1.step()
-        self.optimizer2.step()
+        self.scaler.step(self.optimizer1)
+        self.scaler.step(self.optimizer2)
+        # self.optimizer1.step()
+        # self.optimizer2.step()
+        self.scaler.update()
         self.optimizer1.zero_grad()
         self.optimizer2.zero_grad()
         learning_rate = self.optimizer1.param_groups[0]['lr']
@@ -279,10 +286,11 @@ class Learner:
         losses = None
         if self.step_count % self.config['update_frequency'] == 0 and data_collector.frame_count >= self.config['per_min_frames']:
             batched_sequences, sequence_indeces = data_collector.load_batched_sequences()
-            v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = self.calculate_values(batched_sequences)
-            rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, q1_, q2_, q1_m, q2_m, p1, batched_sequences)
-            vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1_, v2_, p1, batched_sequences)
-            v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = self.calculate_losses(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2)
+            with torch.amp.autocast(device_type='cuda', dtype=torch.float32):
+                v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = self.calculate_values(batched_sequences)
+                rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, q1_, q2_, q1_m, q2_m, p1, batched_sequences)
+                vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1_, v2_, p1, batched_sequences)
+                v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = self.calculate_losses(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2)
             loss1, loss2, gradient_norm1, gradient_norm2, learning_rate = self.update_weights(v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
             data_collector.update_priorities(rtd1, rtd2, sequence_indeces)

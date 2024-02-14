@@ -107,7 +107,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 1000
+        self.max_timesteps = 500
 
         self.closest_to_goal_dist = 1000
 
@@ -511,9 +511,9 @@ class LaserHockeyEnv(gym.Env, EzPickle):
             if self.winner == 0: # tie
                 r += 0
             elif self.winner == 1: # you won
-                r += 50
+                r += 20
             else: # opponent won
-                r -= 50
+                r -= 20
 
         return r
 

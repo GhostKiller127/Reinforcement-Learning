@@ -63,8 +63,7 @@ class Bandits:
     def __init__(self, training_class):
         self.config = training_class.config
         self.bandit_params = self.config['bandit_params']
-        self.log_dir = training_class.log_dir
-        self.bandits_file = f'{self.log_dir}/bandits.pkl'
+        self.log_dir = f'{training_class.log_dir}/bandits.pkl'
         if self.config['load_run'] is None:
             self.bandits = self.initialize_bandits()
         else:
@@ -73,12 +72,12 @@ class Bandits:
 
 
     def save_bandits(self):
-        with open(self.bandits_file, 'wb') as file:
+        with open(self.log_dir, 'wb') as file:
             pickle.dump(self.bandits, file)
 
 
     def load_bandits(self):
-        with open(self.bandits_file, 'rb') as file:
+        with open(self.log_dir, 'rb') as file:
             self.bandits = pickle.load(file)
         return self.bandits
 
