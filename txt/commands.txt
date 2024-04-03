@@ -1,1 +1,6 @@
-tensorboard --logdir runs/REINFORCE
+conda activate S5
+cd "Reinforcement Learning/src"
+python main.py
+cd "Reinforcement Learning/runs/LaserHockey-v0/n1024,b64,s100,bb100,d_t1000,g0.99,lr0.001_Nov25-07-27-29"
+cd "LaserHockey-v0/n1024,b64,s100,bb100,d_t1000,g0.99,lr0.001_Nov25-07-27-29"
+wandb sync events.out.tfevents.1700893651.Laptop.10804.0 --project LaserHockey-v0 --id n1024,b64,s100,bb100,d_t1000,g0.99,lr0.001_Nov25-07-27-29

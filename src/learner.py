@@ -3,7 +3,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from architectures import DenseModel
-from architectures import TransformerModel
 
 
 
@@ -20,11 +19,6 @@ class Learner:
             self.learner2 = DenseModel(self.config['dense_params'], self.device)
             self.target1 = DenseModel(self.config['dense_params'], self.device)
             self.target2 = DenseModel(self.config['dense_params'], self.device)
-        if self.config['architecture'] == 'transformer':
-            self.learner1 = TransformerModel(self.config['transformer_params'], self.device)
-            self.learner2 = TransformerModel(self.config['transformer_params'], self.device)
-            self.target1 = TransformerModel(self.config['transformer_params'], self.device)
-            self.target2 = TransformerModel(self.config['transformer_params'], self.device)
         for param1, param2 in zip(self.target1.parameters(), self.target2.parameters()):
             param1.requires_grad_(False)
             param2.requires_grad_(False)

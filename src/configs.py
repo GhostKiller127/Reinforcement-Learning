@@ -1,6 +1,7 @@
 configs = {
     "CartPole-v1": {
         "load_run": None,
+        "wandb_id": None,
         "played_frames": 0,
         "max_frames": 3000000,
         "sample_reuse": 2,
@@ -34,14 +35,6 @@ configs = {
             "input_dim": 4,
             "hidden_dim": 128,
             "action_dim": 2},
-        "transformer_params": {
-            "input_dim": 4,
-            "input_dim": 4,
-            "input_dim": 4,
-            "input_dim": 4,
-            "input_dim": 4,
-            "hidden_dim": 128,
-            "action_dim": 2},
         "bandit_params": {
             "mode": ["argmax", "random"],
             "tau1": [0.0, 50.0],
@@ -55,6 +48,7 @@ configs = {
     },
     "LunarLander-v2": {
         "load_run": None,
+        "wandb_id": None,
         "played_frames": 0,
         "max_frames": 10000000,
         "sample_reuse": 2,
@@ -101,6 +95,7 @@ configs = {
     },
     "LaserHockey-v0": {
         "load_run": None,
+        "wandb_id": None,
         "played_frames": 0,
         "max_frames": 100000000,
         "sample_reuse": 2,
@@ -115,7 +110,7 @@ configs = {
         "d_push": 50,
         "d_pull": 50,
         "d_target": 1000,
-        "discount": 0.99,
+        "discount": 0.995,
         "reward_scaling_1": 0.25,
         "reward_scaling_2": 0.3,
         "v_loss_scaling": 1.0,

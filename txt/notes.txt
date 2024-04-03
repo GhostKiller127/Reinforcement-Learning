@@ -1,23 +1,48 @@
+transformer
+    can I predict for multiple obs in one pass?
+        actor: no
+        learner from memory: yes!
+            crypto: add profit state to each kline
+    set min_sequence_length
+    environment?
+        use architecture parameter
+        pass obs as sequence with past of maximally min_sequence_length, not seperately
+    data collector
+        also pass obs as sequences
+    actor
+        repeat first obs to fill min_sequence_length
+    learner and/or data collector
+        add min_sequence_length - 1 times the first obs at the beginning of the sequence for gym
+        forward pass and train on whole sequence
+additional capabilities
+    gymnasium play and show
+    training with jax
+    s5 model
+    crypto environment
+evaluation
+    laserhockey env, train and val mode
+        rewards
+        episode length
+    number of validation environments should be percentage based
+    predicted mean, max value or distribution
 optimizations
-    add transformer
-        can I predict for multiple obs in one pass?
-            actor: no
-            learner from memory: yes!
-                crypto: add profit state to each kline
-        set min_sequence_length
-        environment?
-            use architecture parameter
-            pass obs as sequence with past of maximally min_sequence_length, not seperately
-        data collector
-            also pass obs as sequences
-        actor
-            repeat first obs to fill min_sequence_length
-        learner and/or data collector
-            add min_sequence_length - 1 times the first obs at the beginning of the sequence for gym
-            forward pass and train on whole sequence
-    optimize code
-        how come some gpu memory is given back after execution, and some not?
-        bandit: little overhead for complicated environments
-    read saved papers
-    add playing against agents
-
+    refactoring
+    find ram accumulation
+        run in loop
+            data collector saving
+            laserhockey environment
+            bandits
+    find bottleneck
+        measure and print time for each complete run step
+        measure time for subsequent tasks
+        print as list/dict with times and percentages
+            bandit
+            data collector
+            model and optimizer state
+            hyperparameters
+        can I run regular tasks like saving and loading on a side core?
+            maybe main script launches side script
+            will there the accessing problems?
+                if yes, main script is on ram, side script on hdd
+next commit
+    message: added wandb, little restructure

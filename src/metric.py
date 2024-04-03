@@ -1,4 +1,6 @@
+import os
 import json
+import wandb
 import numpy as np
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -7,12 +9,31 @@ class Metric:
     def __init__(self, training_class):
         self.config = training_class.config
         self.log_dir = training_class.log_dir
+        self.env_name = training_class.env_name
+        self.initialize_wandb()
         self.writer = SummaryWriter(log_dir=self.log_dir)
         self.hyperparams_file = f'{self.log_dir}/hyperparameters.json'
         with open(self.hyperparams_file, 'w') as file:
             json.dump(self.config, file)
     
 
+    def initialize_wandb(self):
+        self.run_name = '/'.join(self.log_dir.split('/')[-1:])
+        if self.config['load_run'] is None:
+            self.config['wandb_id'] = wandb.util.generate_id()
+        wandb.tensorboard.patch(root_logdir=self.log_dir)
+        wandb.init(
+            project=self.env_name,
+            name=self.run_name,
+            id=self.config['wandb_id'],
+            resume='allow',
+            dir='../',
+            config=self.config,
+        )
+        os.remove('../wandb/debug.log')
+        os.remove('../wandb/debug-internal.log')
+
+    
     def add_return(self, data_collector, returns, terminated_envs, played_frames):
         if returns is None:
             return
@@ -62,3 +83,4 @@ class Metric:
     def close_writer(self):
         self.writer.flush()
         self.writer.close()
+        wandb.finish()

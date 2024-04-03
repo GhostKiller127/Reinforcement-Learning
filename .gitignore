@@ -1,7 +1,6 @@
 docs
-runs
-src/runs
-src/trained models
-src/__pycache__
-
 Laser Hockey
+runs
+src/__pycache__
+models
+wandb

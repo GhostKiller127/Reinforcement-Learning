@@ -3,7 +3,6 @@ import torch
 import torch.nn.functional as F
 import torch.distributions as dist
 from architectures import DenseModel
-from architectures import TransformerModel
 
 
 class Actor:
@@ -15,9 +14,6 @@ class Actor:
         if self.config['architecture'] == 'dense':
             self.actor1 = DenseModel(self.config['dense_params'], self.device)
             self.actor2 = DenseModel(self.config['dense_params'], self.device)
-        if self.config['architecture'] == 'transformer':
-            self.actor1 = TransformerModel(self.config['transformer_params'], self.device)
-            self.actor2 = TransformerModel(self.config['transformer_params'], self.device)
         for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
             param1.requires_grad_(False)
             param2.requires_grad_(False)

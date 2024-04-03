@@ -7,15 +7,19 @@ from actor import Actor
 from training import Training
 
 
-# env_name = 'CartPole-v1'
+env_name = 'CartPole-v1'
 # env_name = 'LunarLander-v2'
-env_name = 'LaserHockey-v0'
+# env_name = 'LaserHockey-v0'
 
 # load_run = None
-load_run = 'n4096,b256,s100,bb100,d_t1000,g0.99,lr0.001_Nov27-02-10-25'
+# wandb_id = None
+load_run = 'n256,b16,s100,bb100,d_t1000,g0.995,lr0.01_Apr04-01-15-30'
+wandb_id = 'lkb3vpdu'
 
 # if load_run is specified only max_frames will be used
-train_parameters = {'max_frames': 100000000,
+train_parameters = {'max_frames': 1000000,
+                    'per_buffer_size': 1000000,
+                    'per_min_frames': 100000,
                     'lr_finder': False}
 
 abbreviation_dict = {
@@ -29,7 +33,7 @@ abbreviation_dict = {
                      'add_on': None}
 
 
-training = Training(env_name, load_run, train_parameters, abbreviation_dict)
+training = Training(env_name, load_run, wandb_id, train_parameters, abbreviation_dict)
 environments = Environments(training)
 data_collector = DataCollector(training)
 metric = Metric(training)
