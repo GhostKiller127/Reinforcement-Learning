@@ -29,9 +29,9 @@ class Learner:
         self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**gamma)
         if self.config['load_run'] is None:
             os.makedirs(self.log_dir, exist_ok=True)
-            self.push_weights()
+            self.save_weights_and_data_collector()
         else:
-            self.pull_weights()
+            self.load_weights()
         self.update_target_weights()
 
     
@@ -45,15 +45,17 @@ class Learner:
         return self.config["learning_rate"] / 1e3, self.config["learning_rate"], 1 / self.config['warmup_steps']
 
 
-    def push_weights(self):
+    def save_weights_and_data_collector(self, data_collector=None):
         if self.update_count % self.config['d_push'] == 0:
             torch.save(self.learner1.state_dict(), f'{self.log_dir}/learner1.pth')
             torch.save(self.learner2.state_dict(), f'{self.log_dir}/learner2.pth')
             torch.save(self.optimizer1.state_dict(), f'{self.log_dir}/optimizer1.pth')
             torch.save(self.optimizer2.state_dict(), f'{self.log_dir}/optimizer2.pth')
+            if data_collector is not None and not self.config['lr_finder']:
+                data_collector.save_data_collector()
 
 
-    def pull_weights(self):
+    def load_weights(self):
         self.learner1.load_state_dict(torch.load(f'{self.log_dir}/learner1.pth'))
         self.learner2.load_state_dict(torch.load(f'{self.log_dir}/learner2.pth'))
         self.optimizer1.load_state_dict(torch.load(f'{self.log_dir}/optimizer1.pth'))
@@ -247,7 +249,7 @@ class Learner:
         return v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
     
 
-    def update_weights(self, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2):
+    def update_weights(self, data_collector, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2):
         with torch.amp.autocast(device_type='cuda', dtype=torch.float32):
             loss1 = ((self.config['v_loss_scaling'] * v_loss1 + self.config['q_loss_scaling'] * q_loss1 + self.config['p_loss_scaling'] * p_loss1) /
                     (self.config['v_loss_scaling'] + self.config['q_loss_scaling'] + self.config['p_loss_scaling']))
@@ -271,7 +273,7 @@ class Learner:
             self.scheduler1.step()
             self.scheduler2.step()
         self.update_count += 1
-        self.push_weights()
+        self.save_weights_and_data_collector(data_collector)
         self.update_target_weights()
         return loss1, loss2, gradient_norm1, gradient_norm2, learning_rate
 
@@ -285,7 +287,7 @@ class Learner:
                 rt1, rt2, rtd1, rtd2 = self.calculate_retrace_targets(q1, q2, q1_, q2_, q1_m, q2_m, p1, batched_sequences)
                 vt1, vt2, pt1, pt2 = self.calculate_vtrace_targets(v1_, v2_, p1, batched_sequences)
                 v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = self.calculate_losses(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2)
-            loss1, loss2, gradient_norm1, gradient_norm2, learning_rate = self.update_weights(v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2)
+            loss1, loss2, gradient_norm1, gradient_norm2, learning_rate = self.update_weights(data_collector, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
             data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
         self.step_count += 1

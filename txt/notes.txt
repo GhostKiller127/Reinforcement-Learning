@@ -33,4 +33,4 @@ terminal messages
     Segmentation fault
     wandb update
 next commit
-    message: added time measurement
+    message: saving less often

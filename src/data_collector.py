@@ -99,8 +99,6 @@ class DataCollector:
             for _, value in self.sequence_data.items():
                 value[:, :self.reused_length] = value[:, -self.reused_length:]
             self.step_count = self.reused_length
-            if (self.sequence_count / self.config['num_envs']) % int(0.1 * self.max_sequences / self.config['num_envs']) == 0 and not self.config['lr_finder']:
-                self.save_data_collector()
     
 
     def check_done_and_return(self):

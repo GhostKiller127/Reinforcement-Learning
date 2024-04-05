@@ -11,7 +11,7 @@ class Metric:
         self.log_dir = training_class.log_dir
         self.env_name = training_class.env_name
         self.initialize_wandb()
-        self.writer = SummaryWriter(log_dir=self.log_dir)
+        self.writer = SummaryWriter(log_dir=self.log_dir, max_queue=1000)
         self.hyperparams_file = f'{self.log_dir}/hyperparameters.json'
         with open(self.hyperparams_file, 'w') as file:
             json.dump(self.config, file)
@@ -22,14 +22,12 @@ class Metric:
         if self.config['load_run'] is None:
             self.config['wandb_id'] = wandb.util.generate_id()
         wandb.tensorboard.patch(root_logdir=self.log_dir)
-        wandb.init(
-            project=self.env_name,
-            name=self.run_name,
-            id=self.config['wandb_id'],
-            resume='allow',
-            dir='../',
-            config=self.config,
-        )
+        wandb.init(project=self.env_name,
+                   name=self.run_name,
+                   id=self.config['wandb_id'],
+                   resume='allow',
+                   dir='../',
+                   config=self.config)
         os.remove('../wandb/debug.log')
         os.remove('../wandb/debug-internal.log')
 
