@@ -1,4 +1,6 @@
-transformer
+ssm
+    model
+        float64 vs float32
     can I predict for multiple obs in one pass?
         actor: no
         learner from memory: yes!
@@ -20,29 +22,15 @@ additional capabilities
     s5 model
     crypto environment
 evaluation
-    laserhockey env, train and val mode
-        rewards
-        episode length
     number of validation environments should be percentage based
-    predicted mean, max value or distribution
+    predicted mean, max or distribution of value head
+    laserhockey env, train and val mode (rewards, episode length)
 optimizations
-    refactoring
-    find ram accumulation
-        run in loop
-            data collector saving
-            laserhockey environment
-            bandits
-    find bottleneck
-        measure and print time for each complete run step
-        measure time for subsequent tasks
-        print as list/dict with times and percentages
-            bandit
-            data collector
-            model and optimizer state
-            hyperparameters
-        can I run regular tasks like saving and loading on a side core?
-            maybe main script launches side script
-            will there the accessing problems?
-                if yes, main script is on ram, side script on hdd
+    bandit vectorization
+    ram: maybe needed later
+    time: either save states on ssd or less often on hdd
+terminal messages
+    Segmentation fault
+    wandb update
 next commit
-    message: added wandb, little restructure
+    message: added time measurement

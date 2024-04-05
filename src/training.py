@@ -3,6 +3,9 @@ import torch
 import datetime
 from configs import configs
 
+from timeit import default_timer as dt
+import numpy as np
+
 
 class Training:
     def __init__(self, env_name, load_run, wandb_id, train_parameters, abbreviation_dict):
@@ -46,32 +49,96 @@ class Training:
         return log_dir
     
 
+
     def run(self, environments, data_collector, metric, bandits, learner, actor):
         next_observations, infos = environments.reset()
         indeces = bandits.get_all_indeces(self.num_envs)
+
+        step = 0
+        run_steps = []
+        bandit_steps = []
+        env_steps = []
+        dc_steps = []
+        metric_t_steps = []
+        actor_t_steps = []
+        learner_t_steps = []
+        conv_a_t_steps = []
         
         while self.played_frames < self.max_frames:
+
+            step += 1
+            start = dt()
+
             observations = next_observations
             actor.pull_weights(learner)
+            before_actor = dt()
             actions, action_probs = actor.get_actions(observations, indeces, training=True)
+            actor_t = dt() - before_actor
+            before_conv_a = dt()
             converted_actions = environments.convert_actions(actions, infos)
+            conv_a_t = dt() - before_conv_a
+            before_env = dt()
             next_observations, rewards, terminated, truncated, infos = environments.step(converted_actions)
+            env = dt() - before_env
 
+            before_dc = dt()
             data_collector.add_data(o=observations, a=actions, a_p=action_probs, i=indeces, r=rewards, d=terminated, t=truncated)
             terminated_indeces, returns, terminated_envs = data_collector.check_done_and_return()
+            dc = dt() - before_dc
+            before_bandit = dt()
             new_indeces, index_data = bandits.update_and_get_data(data_collector, terminated_indeces, returns, terminated_envs)
+            bandit = dt() - before_bandit
             indeces[terminated_envs] = new_indeces
             
+            before_learner = dt()
             losses = learner.check_and_update(data_collector)
+            learner_t = dt() - before_learner
 
             self.played_frames += self.num_envs
+            before_metric = dt()
             metric.add_return(data_collector, returns, terminated_envs, self.played_frames)
             metric.add_index_data(index_data, self.played_frames)
             metric.add_losses(losses, self.played_frames)
+            metric_t = dt() - before_metric
             print(f"Frames: {self.played_frames}/{self.max_frames}", end='\r')
+
+
+            end = dt()
+            run_step = end - start
+
+            run_steps.append(run_step)
+            bandit_steps.append(bandit)
+            env_steps.append(env)
+            dc_steps.append(dc)
+            metric_t_steps.append(metric_t)
+            actor_t_steps.append(actor_t)
+            learner_t_steps.append(learner_t)
+            conv_a_t_steps.append(conv_a_t)
+
+            mean_start = 0
+            if step >= 200:
+                mean_start = 200
+            
+            sum = np.sum([bandit, env, dc, metric_t, actor_t, learner_t, conv_a_t])
+            mean_sum = np.sum([np.mean(bandit_steps[mean_start:]), np.mean(env_steps[mean_start:]), np.mean(dc_steps[mean_start:]), np.mean(metric_t_steps[mean_start:]), np.mean(actor_t_steps[mean_start:]), np.mean(learner_t_steps[mean_start:]), np.mean(conv_a_t_steps[mean_start:])])
+
+            print(f"Frames: {self.played_frames}/{self.max_frames}")
+            print(f"Type:\tSec\tPerc\tMean")
+            print(f"Step:\t{run_step:.4f}\t{np.mean(run_steps):.4f}\t{np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Bandit:\t{bandit:.4f}\t{bandit/run_step:.4f}\t{np.mean(bandit_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Env:\t{env:.4f}\t{env/run_step:.4f}\t{np.mean(env_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"DC:\t{dc:.4f}\t{dc/run_step:.4f}\t{np.mean(dc_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Metric:\t{metric_t:.4f}\t{metric_t/run_step:.4f}\t{np.mean(metric_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Actor:\t{actor_t:.4f}\t{actor_t/run_step:.4f}\t{np.mean(actor_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Learn:\t{learner_t:.4f}\t{learner_t/run_step:.4f}\t{np.mean(learner_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Conv_a:\t{conv_a_t:.4f}\t{conv_a_t/run_step:.4f}\t{np.mean(conv_a_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            print(f"Sum:\t{sum:.4f}\t{sum/run_step:.4f}\t{mean_sum/np.mean(run_steps[mean_start:]):.4f}")
+
 
         # save model and optimizer again?
         # save all other needed parameters again?
         data_collector.save_data_collector()
         environments.close()
         metric.close_writer()
+
+        

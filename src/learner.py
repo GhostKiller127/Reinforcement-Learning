@@ -289,4 +289,7 @@ class Learner:
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
             data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
         self.step_count += 1
-        return losses
+        if losses is None:
+            return None
+        else:
+            return tuple(loss.detach().cpu().numpy() if isinstance(loss, torch.Tensor) else np.array(loss) for loss in losses)
