@@ -8,7 +8,7 @@ import numpy as np
 
 
 class Training:
-    def __init__(self, env_name, load_run, wandb_id, train_parameters, abbreviation_dict):
+    def __init__(self, env_name, load_run, wandb_id=None, train_parameters=None, abbreviation_dict=None):
         self.env_name = env_name
         self.config = self.get_config(self.env_name, load_run, wandb_id, train_parameters)
         self.log_dir = self.get_log_dir(self.config, self.env_name, abbreviation_dict)
@@ -83,12 +83,13 @@ class Training:
 
             before_dc = dt()
             data_collector.add_data(o=observations, a=actions, a_p=action_probs, i=indeces, r=rewards, d=terminated, t=truncated)
-            terminated_indeces, returns, terminated_envs = data_collector.check_done_and_return()
+            train_indeces, val_indeces, train_returns, val_returns, train_envs, val_envs = data_collector.check_done_and_return()
             dc = dt() - before_dc
             before_bandit = dt()
-            new_indeces, index_data = bandits.update_and_get_data(data_collector, terminated_indeces, returns, terminated_envs)
+            new_train_indeces, new_val_indeces, index_data = bandits.update_and_get_data(data_collector, train_indeces, train_returns, train_envs, val_envs)
             bandit = dt() - before_bandit
-            indeces[terminated_envs] = new_indeces
+            indeces[train_envs] = new_train_indeces
+            indeces[val_envs] = new_val_indeces
             
             before_learner = dt()
             losses = learner.check_and_update(data_collector)
@@ -96,7 +97,8 @@ class Training:
 
             self.played_frames += self.num_envs
             before_metric = dt()
-            metric.add_return(data_collector, returns, terminated_envs, self.played_frames)
+            metric.add_train_return(train_returns, self.played_frames)
+            metric.add_val_return(val_returns, val_envs, self.played_frames)
             metric.add_index_data(index_data, self.played_frames)
             metric.add_losses(losses, self.played_frames)
             metric_t = dt() - before_metric
@@ -106,33 +108,33 @@ class Training:
             end = dt()
             run_step = end - start
 
-            run_steps.append(run_step)
-            bandit_steps.append(bandit)
-            env_steps.append(env)
-            dc_steps.append(dc)
-            metric_t_steps.append(metric_t)
-            actor_t_steps.append(actor_t)
-            learner_t_steps.append(learner_t)
-            conv_a_t_steps.append(conv_a_t)
+            # run_steps.append(run_step)
+            # bandit_steps.append(bandit)
+            # env_steps.append(env)
+            # dc_steps.append(dc)
+            # metric_t_steps.append(metric_t)
+            # actor_t_steps.append(actor_t)
+            # learner_t_steps.append(learner_t)
+            # conv_a_t_steps.append(conv_a_t)
 
-            mean_start = 0
-            if step >= 200:
-                mean_start = 200
+            # mean_start = 0
+            # if step >= 200:
+            #     mean_start = 200
             
-            sum = np.sum([bandit, env, dc, metric_t, actor_t, learner_t, conv_a_t])
-            mean_sum = np.sum([np.mean(bandit_steps[mean_start:]), np.mean(env_steps[mean_start:]), np.mean(dc_steps[mean_start:]), np.mean(metric_t_steps[mean_start:]), np.mean(actor_t_steps[mean_start:]), np.mean(learner_t_steps[mean_start:]), np.mean(conv_a_t_steps[mean_start:])])
+            # sum = np.sum([bandit, env, dc, metric_t, actor_t, learner_t, conv_a_t])
+            # mean_sum = np.sum([np.mean(bandit_steps[mean_start:]), np.mean(env_steps[mean_start:]), np.mean(dc_steps[mean_start:]), np.mean(metric_t_steps[mean_start:]), np.mean(actor_t_steps[mean_start:]), np.mean(learner_t_steps[mean_start:]), np.mean(conv_a_t_steps[mean_start:])])
 
-            print(f"Frames: {self.played_frames}/{self.max_frames}")
-            print(f"Type:\tSec\tPerc\tMean")
-            print(f"Step:\t{run_step:.4f}\t{np.mean(run_steps):.4f}\t{np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Bandit:\t{bandit:.4f}\t{bandit/run_step:.4f}\t{np.mean(bandit_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Env:\t{env:.4f}\t{env/run_step:.4f}\t{np.mean(env_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"DC:\t{dc:.4f}\t{dc/run_step:.4f}\t{np.mean(dc_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Metric:\t{metric_t:.4f}\t{metric_t/run_step:.4f}\t{np.mean(metric_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Actor:\t{actor_t:.4f}\t{actor_t/run_step:.4f}\t{np.mean(actor_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Learn:\t{learner_t:.4f}\t{learner_t/run_step:.4f}\t{np.mean(learner_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Conv_a:\t{conv_a_t:.4f}\t{conv_a_t/run_step:.4f}\t{np.mean(conv_a_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
-            print(f"Sum:\t{sum:.4f}\t{sum/run_step:.4f}\t{mean_sum/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Frames: {self.played_frames}/{self.max_frames}")
+            # print(f"Type:\tSec\tPerc\tMean")
+            # print(f"Step:\t{run_step:.4f}\t{np.mean(run_steps):.4f}\t{np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Bandit:\t{bandit:.4f}\t{bandit/run_step:.4f}\t{np.mean(bandit_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Env:\t{env:.4f}\t{env/run_step:.4f}\t{np.mean(env_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"DC:\t{dc:.4f}\t{dc/run_step:.4f}\t{np.mean(dc_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Metric:\t{metric_t:.4f}\t{metric_t/run_step:.4f}\t{np.mean(metric_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Actor:\t{actor_t:.4f}\t{actor_t/run_step:.4f}\t{np.mean(actor_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Learn:\t{learner_t:.4f}\t{learner_t/run_step:.4f}\t{np.mean(learner_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Conv_a:\t{conv_a_t:.4f}\t{conv_a_t/run_step:.4f}\t{np.mean(conv_a_t_steps[mean_start:])/np.mean(run_steps[mean_start:]):.4f}")
+            # print(f"Sum:\t{sum:.4f}\t{sum/run_step:.4f}\t{mean_sum/np.mean(run_steps[mean_start:]):.4f}")
 
 
         # save model and optimizer again?

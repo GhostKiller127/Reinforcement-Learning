@@ -22,15 +22,13 @@ additional capabilities
     s5 model
     crypto environment
 evaluation
-    number of validation environments should be percentage based
     predicted mean, max or distribution of value head
-    laserhockey env, train and val mode (rewards, episode length)
 optimizations
     bandit vectorization
     ram: maybe needed later
-    time: either save states on ssd or less often on hdd
+    are the targets calculated each time or ones? cause dc saves sequence plus bootstrap
 terminal messages
-    Segmentation fault
+    Segmentation fault (wandb?)
     wandb update
 next commit
-    message: saving less often
+    message: added val environments

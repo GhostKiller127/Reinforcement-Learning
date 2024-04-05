@@ -61,7 +61,7 @@ class Actor:
             action_probs = policy.gather(1, actions.unsqueeze(1))
         if training:
             _, greedy_actions = policy.max(1)
-            actions[-1] = greedy_actions[-1]
+            actions[-(self.config['val_envs'] // 2):] = greedy_actions[-(self.config['val_envs'] // 2):]
         actions = actions.cpu().numpy()
         action_probs = action_probs.cpu().numpy()
         return actions, action_probs

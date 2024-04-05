@@ -32,15 +32,18 @@ class Metric:
         os.remove('../wandb/debug-internal.log')
 
     
-    def add_return(self, data_collector, returns, terminated_envs, played_frames):
-        if returns is None:
-            return
-        self.writer.add_scalar('_return', np.mean(returns), global_step=played_frames)
-        for _, env in enumerate(terminated_envs):
-            if env == self.config['num_envs'] - 2 and data_collector.frame_count >= self.config['per_min_frames']:
-                self.writer.add_scalar('_return/stochastic', returns[_], global_step=played_frames)
-            if env == self.config['num_envs'] - 1 and data_collector.frame_count >= self.config['per_min_frames']:
-                self.writer.add_scalar('_return/argmax', returns[_], global_step=played_frames)
+    def add_train_return(self, train_returns, played_frames):
+        if train_returns.size != 0:
+            self.writer.add_scalar('_return/train', np.mean(train_returns), global_step=played_frames)
+
+    
+    def add_val_return(self, val_returns, val_envs, played_frames):
+        stochastic_returns = [val_returns[i] for i, env in enumerate(val_envs) if env < (self.config['num_envs'] - self.config['val_envs'] // 2)]
+        greedy_returns = [val_returns[i] for i, env in enumerate(val_envs) if env >= (self.config['num_envs'] - self.config['val_envs'] // 2)]
+        if stochastic_returns:
+            self.writer.add_scalar('_return/val_stochastic', np.mean(stochastic_returns), global_step=played_frames)
+        if greedy_returns:
+            self.writer.add_scalar('_return/val_greedy', np.mean(greedy_returns), global_step=played_frames)
 
     
     def add_index_data(self, index_data, played_frames):

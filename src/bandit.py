@@ -193,22 +193,20 @@ class Bandits:
         return np.array(indeces)
 
 
-    def update_and_get_data(self, data_collector, terminated_indeces, returns, terminated_envs):
-        if terminated_indeces is None:
-            return None, None
-        data = None
+    def update_and_get_data(self, data_collector, train_indeces, train_returns, train_envs, val_envs):
+        index_data = None
         if data_collector.frame_count >= self.config['per_min_frames']:
-            for _ in range(len(returns)):
-                tau1, tau2, epsilon = terminated_indeces[_]
-                g = returns[_]
+            for _ in range(len(train_returns)):
+                tau1, tau2, epsilon = train_indeces[_]
+                g = train_returns[_]
                 self.update_bandits(tau1, tau2, epsilon, g)
             self.save_bandits()
-            data = self.get_index_data()
-        new_indeces = []
+            index_data = self.get_index_data()
+            new_val_indeces = [index_data[:3] for _ in val_envs] if val_envs else None
+        
         all_candidates = self.get_candidates()
-        for env in terminated_envs:
-            if (env >= self.config['num_envs'] - 2) and data_collector.frame_count >= self.config['per_min_frames']:
-                new_indeces.append(data[:3])
-            else:
-                new_indeces.append(self.sample_candidate(all_candidates))
-        return np.array(new_indeces), data
+        new_train_indeces = [self.sample_candidate(all_candidates) for _ in train_envs] if train_envs else None
+        if not data_collector.frame_count >= self.config['per_min_frames']:
+            new_val_indeces = [self.sample_candidate(all_candidates) for _ in val_envs] if val_envs else None
+
+        return new_train_indeces, new_val_indeces, index_data

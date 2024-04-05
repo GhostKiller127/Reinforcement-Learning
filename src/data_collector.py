@@ -6,6 +6,7 @@ class DataCollector:
     def __init__(self, training_class):
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/data_collector.npz'
+        self.train_envs = self.config['num_envs'] - self.config['val_envs']
         self.max_sequences = self.get_max_sequences()
         self.sequence_length = self.config['sequence_length'] + self.config['bootstrap_length'] + 1
         self.reused_length = self.sequence_length - int(self.config['sequence_length'] / self.config['sample_reuse'])
@@ -72,11 +73,11 @@ class DataCollector:
 
     def get_max_sequences(self):
         max_sequences = int(self.config['per_buffer_size'] / self.config['sequence_length'])
-        if max_sequences % self.config['num_envs'] == 0:
+        if max_sequences % self.train_envs == 0:
             return max_sequences
         else:
-            r = max_sequences % self.config['num_envs']
-            d = self.config['num_envs'] - r
+            r = max_sequences % self.train_envs
+            d = self.train_envs - r
             return max_sequences + d
 
     
@@ -84,10 +85,10 @@ class DataCollector:
         if self.sequence_count == self.max_sequences:
             self.sequence_count = 0
         for key, value in self.sequence_data.items():
-            self.all_data[key][self.sequence_count: self.sequence_count + self.config['num_envs']] = value
-        self.priorities[self.sequence_count: self.sequence_count + self.config['num_envs']] = 1e3
-        self.frame_count += self.config['num_envs'] * self.config['sequence_length']
-        self.sequence_count += self.config['num_envs']
+            self.all_data[key][self.sequence_count: self.sequence_count + self.train_envs] = value[:self.train_envs]
+        self.priorities[self.sequence_count: self.sequence_count + self.train_envs] = 1e3
+        self.frame_count += self.train_envs * self.config['sequence_length']
+        self.sequence_count += self.train_envs
 
 
     def add_data(self, **kwargs):
@@ -107,16 +108,18 @@ class DataCollector:
         latest_truncated = self.sequence_data['t'][:, self.step_count - 1]
         latest_index = self.sequence_data['i'][:, self.step_count - 1]
         self.env_return += latest_return
-        if np.all(np.logical_not(latest_done)) and np.all(np.logical_not(latest_truncated)):
-            return None, None, []
-        else:
-            done_index = np.where(latest_done)[0]
-            truncated_index = np.where(latest_truncated)[0]
-            terminated_envs = np.union1d(done_index, truncated_index)
-            returns = self.env_return[terminated_envs]
-            indeces = latest_index[terminated_envs]
-            self.env_return[terminated_envs] = 0
-            return indeces, returns, terminated_envs
+        
+        done_envs = np.where(latest_done)[0]
+        truncated_envs = np.where(latest_truncated)[0]
+        terminated_envs = np.union1d(done_envs, truncated_envs)
+        terminated_train_envs = [env for env in terminated_envs if env < self.train_envs]
+        terminated_val_envs = [env for env in terminated_envs if env >= self.train_envs]
+        train_returns = self.env_return[terminated_train_envs]
+        val_returns = self.env_return[terminated_val_envs]
+        train_indeces = latest_index[terminated_train_envs]
+        val_indeces = latest_index[terminated_val_envs]
+        self.env_return[terminated_envs] = 0
+        return train_indeces, val_indeces, train_returns, val_returns, terminated_train_envs, terminated_val_envs
 
 
     def load_batched_sequences(self):

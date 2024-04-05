@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
+import random
 import sys, math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -81,7 +82,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     TRAIN_SHOOTING = 1
     TRAIN_DEFENSE = 2
 
-    def __init__(self, mode = NORMAL):
+    def __init__(self, mode=NORMAL, mode_='val'):
         """ mode is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
         it can be changed later using the reset function
         """
@@ -89,6 +90,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.seed()
         self.viewer = None
         self.mode = mode
+        self.mode_ = mode_
 
         self.world = Box2D.b2World([0,0])
         self.player1 = None
@@ -101,13 +103,16 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.done = False
         self.truncated = False
         self.winner = 0
-        self.one_starts = True # player one starts the game (alternating)
+        self.one_starts = random.choice([True, False])
 
         self.max_puck_speed = 20
 
         self.timeStep = 1.0 / FPS
         self.time = 0
-        self.max_timesteps = 500
+        if mode_ == 'train':
+            self.max_timesteps = 1000
+        elif mode_ == 'val':
+            self.max_timesteps = 2000
 
         self.closest_to_goal_dist = 1000
 
@@ -578,7 +583,8 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
         reward = self._compute_reward()
         info = self._get_info()
-        reward += info['reward_closeness_to_puck'] + info['reward_touch_puck'] + info['reward_puck_direction']
+        if self.mode_ == 'train':
+            reward += info['reward_closeness_to_puck'] + info['reward_touch_puck'] + info['reward_puck_direction']
 
         self.closest_to_goal_dist = min(self.closest_to_goal_dist,
                                         dist_positions(self.puck.position, (W,H/2)))
