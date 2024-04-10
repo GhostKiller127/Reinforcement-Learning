@@ -92,7 +92,7 @@ class Training:
             indeces[val_envs] = new_val_indeces
             
             before_learner = dt()
-            losses = learner.check_and_update(data_collector)
+            losses, targets = learner.check_and_update(data_collector)
             learner_t = dt() - before_learner
 
             self.played_frames += self.num_envs
@@ -100,6 +100,7 @@ class Training:
             metric.add_train_return(train_returns, self.played_frames)
             metric.add_val_return(val_returns, val_envs, self.played_frames)
             metric.add_index_data(index_data, self.played_frames)
+            metric.add_targets(targets, self.played_frames)
             metric.add_losses(losses, self.played_frames)
             metric_t = dt() - before_metric
             print(f"Frames: {self.played_frames}/{self.max_frames}", end='\r')

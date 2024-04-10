@@ -14,25 +14,26 @@ class Learner:
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.config['mixed_precision'])
+        self.architecture_parameters = self.configs['parameters'][self.configs['architecture']]
         if self.config['architecture'] == 'dense':
-            self.learner1 = DenseModel(self.config['dense_params'], self.device)
-            self.learner2 = DenseModel(self.config['dense_params'], self.device)
-            self.target1 = DenseModel(self.config['dense_params'], self.device)
-            self.target2 = DenseModel(self.config['dense_params'], self.device)
-        for param1, param2 in zip(self.target1.parameters(), self.target2.parameters()):
-            param1.requires_grad_(False)
-            param2.requires_grad_(False)
-        initial_lr, end_lr, gamma = self.get_scheduler_args()
-        self.optimizer1 = torch.optim.AdamW(self.learner1.parameters(), lr=initial_lr, eps=self.config['adamw_epsilon'])
-        self.optimizer2 = torch.optim.AdamW(self.learner2.parameters(), lr=initial_lr, eps=self.config['adamw_epsilon'])
-        self.scheduler1 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer1, gamma=(end_lr/initial_lr)**gamma)
-        self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**gamma)
-        if self.config['load_run'] is None:
-            os.makedirs(self.log_dir, exist_ok=True)
-            self.save_weights_and_data_collector()
-        else:
-            self.load_weights()
-        self.update_target_weights()
+            self.learner1 = DenseModel(self.architecture_parameters, self.device)
+            self.learner2 = DenseModel(self.architecture_parameters, self.device)
+            self.target1 = DenseModel(self.architecture_parameters, self.device)
+            self.target2 = DenseModel(self.architecture_parameters, self.device)
+            for param1, param2 in zip(self.target1.parameters(), self.target2.parameters()):
+                param1.requires_grad_(False)
+                param2.requires_grad_(False)
+            initial_lr, end_lr, gamma = self.get_scheduler_args()
+            self.optimizer1 = torch.optim.AdamW(self.learner1.parameters(), lr=initial_lr, eps=self.config['adamw_epsilon'])
+            self.optimizer2 = torch.optim.AdamW(self.learner2.parameters(), lr=initial_lr, eps=self.config['adamw_epsilon'])
+            self.scheduler1 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer1, gamma=(end_lr/initial_lr)**gamma)
+            self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**gamma)
+            if self.config['load_run'] is None:
+                os.makedirs(self.log_dir, exist_ok=True)
+                self.save_weights_and_data_collector()
+            else:
+                self.load_weights()
+            self.update_target_weights()
 
     
     def get_scheduler_args(self):
@@ -289,9 +290,12 @@ class Learner:
                 v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = self.calculate_losses(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2)
             loss1, loss2, gradient_norm1, gradient_norm2, learning_rate = self.update_weights(data_collector, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
+            losses = tuple(loss.detach().cpu().numpy() if isinstance(loss, torch.Tensor) else np.array(loss) for loss in losses)
+            targets = rt1, rt2, vt1, vt2, pt1, pt2
+            targets = tuple(target.detach().cpu().numpy() for target in targets)
             data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
         self.step_count += 1
         if losses is None:
-            return None
+            return None, None
         else:
-            return tuple(loss.detach().cpu().numpy() if isinstance(loss, torch.Tensor) else np.array(loss) for loss in losses)
+            return losses, targets

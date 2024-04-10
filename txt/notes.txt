@@ -26,9 +26,7 @@ evaluation
 optimizations
     bandit vectorization
     ram: maybe needed later
-    are the targets calculated each time or ones? cause dc saves sequence plus bootstrap
 terminal messages
-    Segmentation fault (wandb?)
-    wandb update
+    Segmentation fault
 next commit
-    message: added val environments
+    message: added target metrics

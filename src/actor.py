@@ -11,13 +11,13 @@ class Actor:
         self.device = training_class.device
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
+        self.architecture_parameters = self.configs['parameters'][self.configs['architecture']]
         if self.config['architecture'] == 'dense':
-            self.actor1 = DenseModel(self.config['dense_params'], self.device)
-            self.actor2 = DenseModel(self.config['dense_params'], self.device)
-        for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
-            param1.requires_grad_(False)
-            param2.requires_grad_(False)
-
+            self.actor1 = DenseModel(self.architecture_parameters, self.device)
+            self.actor2 = DenseModel(self.architecture_parameters, self.device)
+            for param1, param2 in zip(self.actor1.parameters(), self.actor2.parameters()):
+                param1.requires_grad_(False)
+                param2.requires_grad_(False)
         
     def pull_weights(self, learner=None, training=True):
         if self.count % self.config['d_pull'] == 0:

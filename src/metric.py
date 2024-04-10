@@ -61,6 +61,18 @@ class Metric:
         self.writer.add_scalar('bandit/max_epsilon', epsilon, global_step=played_frames)
 
 
+    def add_targets(self, targets, played_frames):
+        if targets is None:
+            return
+        rt1, rt2, vt1, vt2, pt1, pt2 = targets
+        self.writer.add_histogram('retrace targets/rt1', rt1, global_step=played_frames, bins=60)
+        self.writer.add_histogram('retrace targets/rt2', rt2, global_step=played_frames, bins=60)
+        self.writer.add_histogram('vtrace targets/vt1', vt1, global_step=played_frames, bins=60)
+        self.writer.add_histogram('vtrace targets/vt2', vt2, global_step=played_frames, bins=60)
+        self.writer.add_histogram('policy targets/pt1', pt1, global_step=played_frames, bins=60)
+        self.writer.add_histogram('policy targets/pt2', pt2, global_step=played_frames, bins=60)
+
+
     def add_losses(self, losses, played_frames):
         if losses is None:
             return
