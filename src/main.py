@@ -2,14 +2,16 @@ from environments import Environments
 from data_collector import DataCollector
 from metric import Metric
 from bandit import Bandits
-from learner import Learner
-from actor import Actor
+# from learner import Learner
+from learner_jax import Learner
+# from actor import Actor
+from actor_jax import Actor
 from training import Training
 
 
-# env_name = 'CartPole-v1'
+env_name = 'CartPole-v1'
 # env_name = 'LunarLander-v2'
-env_name = 'LaserHockey-v0'
+# env_name = 'LaserHockey-v0'
 
 load_run = None
 wandb_id = None
@@ -17,19 +19,22 @@ wandb_id = None
 # wandb_id = 'w55asotf'
 
 # if load_run is specified only max_frames will be used
-train_parameters = {'max_frames': 100000,
-                    'per_buffer_size': 200000,
-                    'per_min_frames': 100,
-                    'lr_finder': False}
+train_parameters = {
+                    # 'max_frames': 100000,
+                    # 'per_buffer_size': 200000,
+                    # 'per_min_frames': 100,
+                    # 'lr_finder': False
+                    }
 
 abbreviation_dict = {
-                     'num_envs': 'n',
+                    #  'num_envs': 'n',
                     #  'batch_size': 'b',
                     #  'sequence_length': 's',
                     #  'bootstrap_length': 'bb',
-                     'd_target': 'd_t',
+                    #  'd_target': 'd_t',
                     #  'discount': 'g',
-                    #  'learning_rate': 'lr',
+                     'learning_rate': 'lr',
+                    #  'weight_decay': 'w',
                      'reward_scaling_1': 'r1s',
                      'reward_scaling_2': 'r2s',
                      'v_loss_scaling': 'v',

@@ -26,7 +26,9 @@ evaluation
 optimizations
     bandit vectorization
     ram: maybe needed later
+    initialize optimizer only for learner, copy only parameters
+    jax everything
 terminal messages
     Segmentation fault
 next commit
-    message: added target metrics
+    message: added training with jax

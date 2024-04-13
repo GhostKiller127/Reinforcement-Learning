@@ -11,7 +11,7 @@ class Actor:
         self.device = training_class.device
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
-        self.architecture_parameters = self.configs['parameters'][self.configs['architecture']]
+        self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense':
             self.actor1 = DenseModel(self.architecture_parameters, self.device)
             self.actor2 = DenseModel(self.architecture_parameters, self.device)

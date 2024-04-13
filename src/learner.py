@@ -14,7 +14,7 @@ class Learner:
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.config['mixed_precision'])
-        self.architecture_parameters = self.configs['parameters'][self.configs['architecture']]
+        self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense':
             self.learner1 = DenseModel(self.architecture_parameters, self.device)
             self.learner2 = DenseModel(self.architecture_parameters, self.device)

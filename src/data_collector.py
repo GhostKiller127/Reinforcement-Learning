@@ -6,6 +6,7 @@ class DataCollector:
     def __init__(self, training_class):
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/data_collector.npz'
+        self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         self.train_envs = self.config['num_envs'] - self.config['val_envs']
         self.max_sequences = self.get_max_sequences()
         self.sequence_length = self.config['sequence_length'] + self.config['bootstrap_length'] + 1
@@ -26,7 +27,7 @@ class DataCollector:
         self.sequence_count = 0
         self.frame_count = 0
 
-        self.obsveration_sequence = np.zeros((self.config['num_envs'], self.sequence_length, self.config['dense_params']['input_dim']))
+        self.obsveration_sequence = np.zeros((self.config['num_envs'], self.sequence_length, self.architecture_parameters['input_dim']))
         self.action_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
         self.action_probs_sequence = np.zeros((self.config['num_envs'], self.sequence_length, 1))
         self.index_sequence = np.zeros((self.config['num_envs'], self.sequence_length, 3))
@@ -34,7 +35,7 @@ class DataCollector:
         self.done_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
         self.truncated_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
 
-        self.obsveration_data = np.zeros((self.max_sequences, self.sequence_length, self.config['dense_params']['input_dim']))
+        self.obsveration_data = np.zeros((self.max_sequences, self.sequence_length, self.architecture_parameters['input_dim']))
         self.action_data = np.zeros((self.max_sequences, self.sequence_length))
         self.action_probs_data = np.zeros((self.max_sequences, self.sequence_length, 1))
         self.index_data = np.zeros((self.max_sequences, self.sequence_length, 3))
