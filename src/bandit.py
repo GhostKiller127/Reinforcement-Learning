@@ -8,8 +8,6 @@ import itertools
 class Bandit:
     def __init__(self, mode, l, r, acc, acc2, width, lr, d):
         self.mode = mode
-        self.l = l
-        self.r = r
         self.acc = acc
         self.acc2 = acc2
         self.width = width
@@ -18,7 +16,7 @@ class Bandit:
         self.size = acc * acc2 + 1
         self.w = np.zeros(self.size)
         self.N = np.zeros(self.size)
-        self.search_space = np.linspace(self.l, self.r, self.size)
+        self.search_space = np.linspace(l, r, self.size)
 
 
     def evaluate(self):
@@ -187,26 +185,25 @@ class Bandits:
 
     def get_all_indeces(self, num_envs):
         indeces = []
-        all_candidates = self.get_candidates()
+        self.all_candidates = self.get_candidates()
         for _ in range(num_envs):
-            indeces.append(self.sample_candidate(all_candidates))
+            indeces.append(self.sample_candidate(self.all_candidates))
         return np.array(indeces)
 
 
     def update_and_get_data(self, data_collector, train_indeces, train_returns, train_envs, val_envs):
         index_data = None
-        if data_collector.frame_count >= self.config['per_min_frames']:
+        if data_collector.frame_count >= self.config['per_min_frames'] and self.config['bandits']:
             for _ in range(len(train_returns)):
                 tau1, tau2, epsilon = train_indeces[_]
                 g = train_returns[_]
                 self.update_bandits(tau1, tau2, epsilon, g)
-            self.save_bandits()
             index_data = self.get_index_data()
             new_val_indeces = [index_data[:3] for _ in val_envs] if val_envs else None
+            self.all_candidates = self.get_candidates()
         
-        all_candidates = self.get_candidates()
-        new_train_indeces = [self.sample_candidate(all_candidates) for _ in train_envs] if train_envs else None
-        if not data_collector.frame_count >= self.config['per_min_frames']:
-            new_val_indeces = [self.sample_candidate(all_candidates) for _ in val_envs] if val_envs else None
+        new_train_indeces = [self.sample_candidate(self.all_candidates) for _ in train_envs] if train_envs else None
+        if not data_collector.frame_count >= self.config['per_min_frames'] or not self.config['bandits']:
+            new_val_indeces = [self.sample_candidate(self.all_candidates) for _ in val_envs] if val_envs else None
 
         return new_train_indeces, new_val_indeces, index_data

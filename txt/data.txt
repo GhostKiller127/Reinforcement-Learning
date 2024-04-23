@@ -1,21 +1,21 @@
 time:
 bandit
-    cartpole:    84% (n256,b16)
-    lunarlander: 56% (n256,b16)
+    cartpole:    73.2% (n256,b16)
+    lunarlander: 57.5% (n256,b16)
     laserhockey: 10% (n256,b16), 6.5% (n512,b32), 3.9% (n1024,b64), -> 1.4% (n4096,b256)
 environment
-    cartpole:    1.5% (n256,b16)
-    lunarlander: 10% (n256,b16)
+    cartpole:    4.3% (n256,b16)
+    lunarlander: 14.3% (n256,b16)
     laserhockey: 65% (n256,b16), 72.0% (n512,b32), 78.0% (n1024,b64), -> 87.0% (n4096,b256)
 actor
-    cartpole:    1.4% (n256,b16)
-    lunarlander: 2.5% (n256,b16)
+    cartpole:    1.80% (n256,b16)
+    lunarlander: 1.85% (n256,b16)
     laserhockey: 2.26% (n256,b16), 1.51% (n512,b32), 0.90% (n1024,b64), -> 0.48% (n4096,b256)
 learner
-    cartpole:    11.5% (n256,b16)
-    lunarlander: 28.1% (n256,b16)
+    cartpole:    15.9% (n256,b16)
+    lunarlander: 22.3% (n256,b16)
     laserhockey: 19.09% (n256,b16), 17.64% (n512,b32), 16.15% (n1024,b64), -> 13.05% (n4096,b256)
 actor:learner
-    cartpole:    8.21 (n256,b16)
-    lunarlander: 11.24 (n256,b16)
+    cartpole:    8.81 (n256,b16)
+    lunarlander: 12.06 (n256,b16)
     laserhockey: 8.45 (n256,b16), 11.68 (n512,b32), 17.94 (n1024,b64), -> 27.0 (n4096,b256)

@@ -6,6 +6,8 @@ from flax.training import train_state
 import functools
 import optax
 from architectures_jax import DenseModelJax
+from s5 import S5
+
 
 
 class Actor:
@@ -14,14 +16,15 @@ class Actor:
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
         self.main_rng = jax.random.PRNGKey(self.config['jax_seed'])
-        self.config['architecture'] = 'dense_jax'
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense_jax':
             self.architecture = DenseModelJax(self.architecture_parameters)
-            self.actor1_params = self.initialize_parameters()
-            self.actor2_params = self.initialize_parameters()
-            self.actor1 = train_state.TrainState.create(apply_fn=self.architecture.apply, params=self.actor1_params, tx=optax.adam(0))
-            self.actor2 = train_state.TrainState.create(apply_fn=self.architecture.apply, params=self.actor2_params, tx=optax.adam(0))
+        elif self.config['architecture'] == 'S5':
+            self.architecture = S5(self.architecture_parameters).s5
+        self.actor1_params = self.initialize_parameters()
+        self.actor2_params = self.initialize_parameters()
+        self.actor1 = train_state.TrainState.create(apply_fn=self.architecture.apply, params=self.actor1_params, tx=optax.adam(0))
+        self.actor2 = train_state.TrainState.create(apply_fn=self.architecture.apply, params=self.actor2_params, tx=optax.adam(0))
     
 
     def initialize_parameters(self):
@@ -65,10 +68,14 @@ class Actor:
         return actions, action_probs
 
 
-@functools.partial(jax.jit, static_argnums=(6, 7, 8, 9, 10))
+
+@functools.partial(jax.jit, static_argnums=(5, 6, 7, 8, 9, 10))
 def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim, num_envs, val_envs, stochastic, random_, training):
-    v1, a1 = actor1.apply_fn({'params': actor1.params}, observations)
-    v2, a2 = actor2.apply_fn({'params': actor2.params}, observations)
+    v1, a1 = actor1.apply_fn({'params': actor1.params}, observations, False)
+    v2, a2 = actor2.apply_fn({'params': actor2.params}, observations, False)
+    v1, a1 = v1[:, -1], a1[:, -1, :]
+    v2, a2 = v2[:, -1], a2[:, -1, :]
+
     tau1 = indices[:, 0:1]
     tau2 = indices[:, 1:2]
     epsilon = indices[:, 2:3]

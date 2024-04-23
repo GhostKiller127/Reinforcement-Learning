@@ -10,7 +10,7 @@ class Learner:
     def __init__(self, training_class):
         self.update_count = 0
         self.step_count = 0
-        self.device = training_class.device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.config['mixed_precision'])

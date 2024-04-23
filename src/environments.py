@@ -34,16 +34,20 @@ class Environments:
 
     def reset(self):
         observations, infos = self.envs.reset()
+        self.observations = np.tile(observations[:, np.newaxis, :], (1, self.config['observation_length'], 1))
         if self.env_name == 'LaserHockey-v0' and self.render_mode == 'human':
             self.envs.render()
-        return observations, infos
+        return self.observations, infos
 
 
     def step(self, actions):
         observations, rewards, terminated, truncated, infos = self.envs.step(actions)
+        if self.config['observation_length'] > 1:
+            self.observations[:, :-1, :] = self.observations[:, 1:, :]
+        self.observations[:, -1, :] = observations
         if self.env_name == 'LaserHockey-v0' and self.render_mode == 'human':
             self.envs.render()
-        return observations, rewards, terminated, truncated, infos
+        return self.observations, rewards, terminated, truncated, infos
 
 
     def render(self):

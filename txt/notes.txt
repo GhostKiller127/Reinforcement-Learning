@@ -1,34 +1,26 @@
-ssm
-    model
-        float64 vs float32
-    can I predict for multiple obs in one pass?
-        actor: no
-        learner from memory: yes!
-            crypto: add profit state to each kline
-    set min_sequence_length
-    environment?
-        use architecture parameter
-        pass obs as sequence with past of maximally min_sequence_length, not seperately
-    data collector
-        also pass obs as sequences
-    actor
-        repeat first obs to fill min_sequence_length
-    learner and/or data collector
-        add min_sequence_length - 1 times the first obs at the beginning of the sequence for gym
-        forward pass and train on whole sequence
+sequential observations
+    learner
+        targets use longer input length then trained loss
 additional capabilities
-    gymnasium play and show
-    training with jax
+    check jax saving and loading
     s5 model
+    sequential observations
+    gymnasium play and show
     crypto environment
+        add profit state to each kline
 evaluation
     predicted mean, max or distribution of value head
 optimizations
-    bandit vectorization
-    ram: maybe needed later
+    bandit vectorization, need to use jax vmap
+    use jax environments
+    smaller dataloader
     initialize optimizer only for learner, copy only parameters
-    jax everything
+    ram usage
+    float32
+    jax everything?
 terminal messages
     Segmentation fault
+runs
+    establish baseline run, or check hyperparameters better
 next commit
-    message: added training with jax
+    message: added save & load, s5 and seq-obs

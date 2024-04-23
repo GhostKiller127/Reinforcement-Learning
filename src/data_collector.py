@@ -21,27 +21,27 @@ class DataCollector:
 
 
     def initialize_data_collector(self):
-        self.env_return = np.zeros(self.config['num_envs'])
-        self.priorities = np.zeros(self.max_sequences)
+        self.env_return = np.zeros(self.config['num_envs'], dtype=np.float32)
+        self.priorities = np.zeros(self.max_sequences, dtype=np.float32)
         self.step_count = 0
         self.sequence_count = 0
         self.frame_count = 0
 
-        self.obsveration_sequence = np.zeros((self.config['num_envs'], self.sequence_length, self.architecture_parameters['input_dim']))
-        self.action_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
-        self.action_probs_sequence = np.zeros((self.config['num_envs'], self.sequence_length, 1))
-        self.index_sequence = np.zeros((self.config['num_envs'], self.sequence_length, 3))
-        self.reward_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
-        self.done_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
-        self.truncated_sequence = np.zeros((self.config['num_envs'], self.sequence_length))
+        self.obsveration_sequence = np.zeros((self.config['num_envs'], self.sequence_length, self.architecture_parameters['input_dim']), dtype=np.float32)
+        self.action_sequence = np.zeros((self.config['num_envs'], self.sequence_length), dtype=np.float32)
+        self.action_probs_sequence = np.zeros((self.config['num_envs'], self.sequence_length, 1), dtype=np.float32)
+        self.index_sequence = np.zeros((self.config['num_envs'], self.sequence_length, 3), dtype=np.float32)
+        self.reward_sequence = np.zeros((self.config['num_envs'], self.sequence_length), dtype=np.float32)
+        self.done_sequence = np.zeros((self.config['num_envs'], self.sequence_length), dtype=np.float32)
+        self.truncated_sequence = np.zeros((self.config['num_envs'], self.sequence_length), dtype=np.float32)
 
-        self.obsveration_data = np.zeros((self.max_sequences, self.sequence_length, self.architecture_parameters['input_dim']))
-        self.action_data = np.zeros((self.max_sequences, self.sequence_length))
-        self.action_probs_data = np.zeros((self.max_sequences, self.sequence_length, 1))
-        self.index_data = np.zeros((self.max_sequences, self.sequence_length, 3))
-        self.reward_data = np.zeros((self.max_sequences, self.sequence_length))
-        self.done_data = np.zeros((self.max_sequences, self.sequence_length))
-        self.truncated_data = np.zeros((self.max_sequences, self.sequence_length))
+        self.obsveration_data = np.zeros((self.max_sequences, self.sequence_length, self.architecture_parameters['input_dim']), dtype=np.float32)
+        self.action_data = np.zeros((self.max_sequences, self.sequence_length), dtype=np.float32)
+        self.action_probs_data = np.zeros((self.max_sequences, self.sequence_length, 1), dtype=np.float32)
+        self.index_data = np.zeros((self.max_sequences, self.sequence_length, 3), dtype=np.float32)
+        self.reward_data = np.zeros((self.max_sequences, self.sequence_length), dtype=np.float32)
+        self.done_data = np.zeros((self.max_sequences, self.sequence_length), dtype=np.float32)
+        self.truncated_data = np.zeros((self.max_sequences, self.sequence_length), dtype=np.float32)
     
 
     def save_data_collector(self):
@@ -94,6 +94,8 @@ class DataCollector:
 
     def add_data(self, **kwargs):
         for key, value in kwargs.items():
+            if key == 'o':
+                value = value[:, -1, :]
             self.sequence_data[key][:, self.step_count] = value
         self.step_count += 1
         if self.step_count == self.sequence_length:
@@ -126,8 +128,8 @@ class DataCollector:
     def load_batched_sequences(self):
         probabilities = self.priorities**self.config['per_priority_exponent'] / np.sum(self.priorities**self.config['per_priority_exponent'])
         sequence_indeces = np.random.choice(len(self.priorities), size=self.config['batch_size'], p=probabilities, replace=False)
-        batched_sequence = {key: value[sequence_indeces] for key, value in self.all_data.items()}
-        return batched_sequence, sequence_indeces
+        batched_sequences = {key: value[sequence_indeces] for key, value in self.all_data.items()}
+        return batched_sequences, sequence_indeces
     
 
     def update_priorities(self, rtd1, rtd2, sequence_indeces):

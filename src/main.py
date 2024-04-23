@@ -13,37 +13,40 @@ env_name = 'CartPole-v1'
 # env_name = 'LunarLander-v2'
 # env_name = 'LaserHockey-v0'
 
-load_run = None
-wandb_id = None
-# load_run = 'n256,b16,s100,bb100,d_t1000,g0.997,lr0.001_Apr06-02-03-50'
-# wandb_id = 'w55asotf'
-
-# if load_run is specified only max_frames will be used
+# if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten.
 train_parameters = {
-                    # 'max_frames': 100000,
-                    # 'per_buffer_size': 200000,
-                    # 'per_min_frames': 100,
-                    # 'lr_finder': False
+                    'load_run': 's5,,Apr23-03-27-19,save_load_test',
+                    'train_frames': 1000000,
+                    'per_buffer_size': 1000000,
+                    'per_min_frames': 1000,
+                    # 'architecture': 'dense_jax',
+                    # 'observation_length': 1,
+                    # 'metrics': False,
+                    'bandits': False,
+                    # 'lr_finder': True,
                     }
 
-abbreviation_dict = {
-                    #  'num_envs': 'n',
-                    #  'batch_size': 'b',
-                    #  'sequence_length': 's',
-                    #  'bootstrap_length': 'bb',
-                    #  'd_target': 'd_t',
-                    #  'discount': 'g',
-                     'learning_rate': 'lr',
-                    #  'weight_decay': 'w',
-                     'reward_scaling_1': 'r1s',
-                     'reward_scaling_2': 'r2s',
-                     'v_loss_scaling': 'v',
-                     'q_loss_scaling': 'q',
-                     'p_loss_scaling': 'p',
-                     'add_on': None}
+run_name_dict = {
+    'prefix': 's5',
+    'suffix': 'save_load_test',
+    # 'num_envs': 'n',
+    # 'batch_size': 'b',
+    # 'observation_length': 'obs',
+    # 'sequence_length': 's',
+    # 'bootstrap_length': 'bb',
+    # 'd_target': 'd_t',
+    # 'discount': 'g',
+    # 'learning_rate': 'lr',
+    # 'weight_decay': 'w',
+    # 'reward_scaling_1': 'r1s',
+    # 'reward_scaling_2': 'r2s',
+    # 'v_loss_scaling': 'v',
+    # 'q_loss_scaling': 'q',
+    # 'p_loss_scaling': 'p',
+    }
 
 
-training = Training(env_name, load_run, wandb_id, train_parameters, abbreviation_dict)
+training = Training(env_name, train_parameters, run_name_dict)
 environments = Environments(training)
 data_collector = DataCollector(training)
 metric = Metric(training)

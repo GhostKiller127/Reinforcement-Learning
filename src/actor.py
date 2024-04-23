@@ -8,7 +8,7 @@ from architectures import DenseModel
 class Actor:
     def __init__(self, training_class):
         self.count = 0
-        self.device = training_class.device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]

@@ -3,11 +3,12 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from jax import random
-from flax import serialization
-from flax.training import train_state
+from flax.training import train_state, orbax_utils
+import orbax.checkpoint as ocp
 import optax
 import functools
 from architectures_jax import DenseModelJax
+from s5 import S5
 
 
 
@@ -17,25 +18,27 @@ class Learner:
         self.step_count = 0
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
+        self.main_rng = random.PRNGKey(self.config['jax_seed'])
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
-        if self.config['architecture'] == 'dense':
-            self.main_rng = random.PRNGKey(self.config['jax_seed'])
+        if self.config['architecture'] == 'dense_jax':
             self.architecture = DenseModelJax(self.architecture_parameters)
-            self.learner1_params = self.initialize_parameters()
-            self.learner2_params = self.initialize_parameters()
-            self.target1_params = self.initialize_parameters()
-            self.target2_params = self.initialize_parameters()
-            self.learning_rate_fn = self.create_learning_rate_fn()
-            self.learner1 = self.create_learner(self.learning_rate_fn, self.learner1_params)
-            self.learner2 = self.create_learner(self.learning_rate_fn, self.learner2_params)
-            self.target1 = self.create_learner(self.learning_rate_fn, self.target1_params)
-            self.target2 = self.create_learner(self.learning_rate_fn, self.target2_params)
-            if self.config['load_run'] is None:
-                os.makedirs(self.log_dir, exist_ok=True)
-                self.save_weights_and_data_collector()
-            else:
-                self.load_weights()
-            self.update_target_weights()
+        elif self.config['architecture'] == 'S5':
+            self.architecture = S5(self.architecture_parameters).s5
+        self.learner1_params = self.initialize_parameters()
+        self.learner2_params = self.initialize_parameters()
+        self.target1_params = self.initialize_parameters()
+        self.target2_params = self.initialize_parameters()
+        self.learning_rate_fn = self.create_learning_rate_fn()
+        self.learner1 = self.create_learner(self.learning_rate_fn, self.learner1_params)
+        self.learner2 = self.create_learner(self.learning_rate_fn, self.learner2_params)
+        self.target1 = self.create_learner(self.learning_rate_fn, self.target1_params)
+        self.target2 = self.create_learner(self.learning_rate_fn, self.target2_params)
+        self.checkpointer = ocp.Checkpointer(ocp.PyTreeCheckpointHandler(write_tree_metadata=True))
+        if self.config['load_run'] is None:
+            os.makedirs(self.log_dir, exist_ok=True)
+        else:
+            self.load_state()
+        self.update_target_weights()
 
 
     def create_learning_rate_fn(self):
@@ -57,23 +60,16 @@ class Learner:
         return schedule_fn
     
 
-    def save_weights_and_data_collector(self, data_collector=None):
-        if self.update_count % self.config['d_push'] == 0:
-            with open(f'{self.log_dir}/learner1.pkl', 'wb') as f:
-                f.write(serialization.to_bytes(self.learner1))
-            with open(f'{self.log_dir}/learner2.pkl', 'wb') as f:
-                f.write(serialization.to_bytes(self.learner2))
-            if data_collector is not None and not self.config['lr_finder']:
-                data_collector.save_data_collector()
+    def save_state(self):
+        save_args = orbax_utils.save_args_from_target(self.learner1)
+        self.checkpointer.save(os.path.abspath(f'{self.log_dir}/learner1'), self.learner1, save_args=save_args, force=True)
+        save_args = orbax_utils.save_args_from_target(self.learner2)
+        self.checkpointer.save(os.path.abspath(f'{self.log_dir}/learner2'), self.learner2, save_args=save_args, force=True)
 
 
-    def load_weights(self):
-        with open(f'{self.log_dir}/learner1.pkl', 'rb') as f:
-            loaded_state = serialization.from_bytes(train_state.TrainState, f.read())
-            self.learner1 = self.learner1.replace(params=loaded_state['params'], opt_state=loaded_state['opt_state'])
-        with open(f'{self.log_dir}/learner2.pkl', 'rb') as f:
-            loaded_state = serialization.from_bytes(train_state.TrainState, f.read())
-            self.learner2 = self.learner2.replace(params=loaded_state['params'], opt_state=loaded_state['opt_state'])
+    def load_state(self):
+        self.learner1 = self.checkpointer.restore(f'{self.log_dir}/learner1', item=self.learner1)
+        self.learner2 = self.checkpointer.restore(f'{self.log_dir}/learner2', item=self.learner2)
 
 
     def update_target_weights(self):
@@ -95,23 +91,23 @@ class Learner:
         return train_state.TrainState.create(apply_fn=self.architecture.apply, params=parameters, tx=tx)
     
 
-    def train_batch(self, batch, data_collector):
-        self.learner1, self.learner2, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = train_batch_(self.learner1, self.learner2, self.target1, self.target2, batch, self.update_count,
-                                                                                                self.config['reward_scaling_1'],
-                                                                                                self.config['reward_scaling_2'],
-                                                                                                self.config['c_clip'],
-                                                                                                self.config['rho_clip'],
-                                                                                                self.config['batch_size'],
-                                                                                                self.config['bootstrap_length'],
-                                                                                                self.config['sequence_length'],
-                                                                                                self.config['discount'],
-                                                                                                self.learning_rate_fn,
-                                                                                                self.config['v_loss_scaling'],
-                                                                                                self.config['q_loss_scaling'],
-                                                                                                self.config['p_loss_scaling'])
+    def train_batch(self, batch):
+        self.main_rng, drop_rng = random.split(self.main_rng)
+        self.learner1, self.learner2, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = train_batch_(drop_rng, self.learner1, self.learner2, self.target1, self.target2, batch, self.update_count,
+                                                                                                        self.config['reward_scaling_1'],
+                                                                                                        self.config['reward_scaling_2'],
+                                                                                                        self.config['c_clip'],
+                                                                                                        self.config['rho_clip'],
+                                                                                                        self.config['batch_size'],
+                                                                                                        self.config['bootstrap_length'],
+                                                                                                        self.config['sequence_length'],
+                                                                                                        self.config['discount'],
+                                                                                                        self.learning_rate_fn,
+                                                                                                        self.config['v_loss_scaling'],
+                                                                                                        self.config['q_loss_scaling'],
+                                                                                                        self.config['p_loss_scaling'])
         
         self.update_count += 1
-        self.save_weights_and_data_collector(data_collector)
         self.update_target_weights()
         return loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2
 
@@ -120,7 +116,7 @@ class Learner:
         losses = None
         if self.step_count % self.config['update_frequency'] == 0 and data_collector.frame_count >= self.config['per_min_frames']:
             batched_sequences, sequence_indeces = data_collector.load_batched_sequences()
-            loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = self.train_batch(batched_sequences, data_collector)
+            loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = self.train_batch(batched_sequences)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
             losses = tuple(jax.device_get(loss) for loss in losses)
             targets = rt1, rt2, vt1, vt2, pt1, pt2
@@ -178,7 +174,8 @@ def moving_window(matrix, window_shape):
 
 
 @jax.jit
-def calculate_values_(params1,
+def calculate_values_(drop_rng,
+                      params1,
                       params2,
                       learner1,
                       learner2,
@@ -186,11 +183,10 @@ def calculate_values_(params1,
                       target2,
                       batch):
     
-    v1, a1 = learner1.apply_fn({'params': params1}, batch['o'])
-    v2, a2 = learner2.apply_fn({'params': params2}, batch['o'])
-
-    v1_, a1_ = target1.apply_fn({'params': target1.params}, batch['o'])
-    v2_, a2_ = target2.apply_fn({'params': target2.params}, batch['o'])
+    v1, a1 = learner1.apply_fn({'params': params1}, batch['o'], True, rngs={"dropout": drop_rng})
+    v2, a2 = learner2.apply_fn({'params': params2}, batch['o'], True, rngs={"dropout": drop_rng})
+    v1_, a1_ = target1.apply_fn({'params': target1.params}, batch['o'], False)
+    v2_, a2_ = target2.apply_fn({'params': target2.params}, batch['o'], False)
     
     i = jnp.array(batch['i'], dtype=jnp.float32)
     a = jnp.expand_dims(jnp.array(batch['a'], dtype=jnp.int32), axis=2)
@@ -381,23 +377,24 @@ def calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
     return loss, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
 
 
-@functools.partial(jax.jit, static_argnums=(6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17))
-def train_batch_(learner1, learner2, target1, target2, batch, step,
-                                                            reward_scaling_1,
-                                                            reward_scaling_2,
-                                                            c_clip,
-                                                            rho_clip,
-                                                            batch_size,
-                                                            bootstrap_length,
-                                                            sequence_length,
-                                                            discount,
-                                                            learning_rate_fn,
-                                                            v_loss_scaling,
-                                                            q_loss_scaling,
-                                                            p_loss_scaling):
+@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18))
+def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
+                                                                reward_scaling_1,
+                                                                reward_scaling_2,
+                                                                c_clip,
+                                                                rho_clip,
+                                                                batch_size,
+                                                                bootstrap_length,
+                                                                sequence_length,
+                                                                discount,
+                                                                learning_rate_fn,
+                                                                v_loss_scaling,
+                                                                q_loss_scaling,
+                                                                p_loss_scaling):
     def loss_fn(params1, params2):
         
-        v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = calculate_values_(params1,
+        v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = calculate_values_(drop_rng,
+                                                                                   params1,
                                                                                     params2,
                                                                                     learner1,
                                                                                     learner2,
