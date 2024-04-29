@@ -35,13 +35,17 @@ class Training:
 
     def get_log_dir(self, config, env_name, run_name_dict):
         if config['load_run'] is None:
-            abbreviated_parameters = {run_name_dict[key]: value for key, value in config.items() if key in run_name_dict}
-            parameter_string = ','.join([f'{key}{value}' for key, value in abbreviated_parameters.items()])
-            if run_name_dict['prefix'] != '': parameter_string = run_name_dict['prefix'] + ',' + parameter_string
-            timestamp = datetime.datetime.now().strftime('%b%d-%H-%M-%S')
-            log_dir = f'../runs/{env_name}/{parameter_string},{timestamp}'
-            if config['lr_finder']: log_dir += '_lr'
-            if run_name_dict['suffix'] != '': log_dir += ',' + run_name_dict['suffix']
+            run_name_parameters = {run_name_dict[key]: value for key, value in config.items() if key in run_name_dict}
+            run_name = ','.join([f'{key}{value}' for key, value in run_name_parameters.items()])
+            if run_name_dict['prefix'] != '':
+                run_name = run_name_dict['prefix'] + ',' + run_name
+            if run_name_dict['timestamp']:
+                run_name += ',' + datetime.datetime.now().strftime('%b%d-%H-%M-%S')
+            if config['lr_finder']:
+                run_name += ',lr'
+            if run_name_dict['suffix'] != '':
+                run_name += ',' + run_name_dict['suffix']
+            log_dir = f'../runs/{env_name}/{run_name}'
         else:
             log_dir = f'../runs/{env_name}/{config["load_run"]}'
         return log_dir

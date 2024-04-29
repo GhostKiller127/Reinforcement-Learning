@@ -1,6 +1,6 @@
 import numpy as np
 import gymnasium as gym
-from gymnasium.vector import SyncVectorEnv
+from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
 import laser_hockey_env as lh
 
 
@@ -21,9 +21,10 @@ class Environments:
                 train_envs = [lambda: lh.LaserHockeyEnv(mode_='train') for _ in range(self.config['num_envs'] - self.config['val_envs'])]
                 val_envs = [lambda: lh.LaserHockeyEnv(mode_='val') for _ in range(self.config['val_envs'])]
                 envs = train_envs + val_envs
+                envs = AsyncVectorEnv(envs)
             else:
                 envs = [lambda: gym.make(self.env_name) for _ in range(self.config['num_envs'])]
-            envs = SyncVectorEnv(envs)
+                envs = SyncVectorEnv(envs)
         else:
             if self.env_name == 'LaserHockey-v0':
                 envs = lh.LaserHockeyEnv(mode_='val')

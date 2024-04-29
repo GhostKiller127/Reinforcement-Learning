@@ -1,7 +1,8 @@
 from environments import Environments
 from data_collector import DataCollector
 from metric import Metric
-from bandit import Bandits
+# from bandit import Bandits
+from bandit_jax import Bandits2 as Bandits
 # from learner import Learner
 from learner_jax import Learner
 # from actor import Actor
@@ -9,26 +10,28 @@ from actor_jax import Actor
 from training import Training
 
 
-env_name = 'CartPole-v1'
-# env_name = 'LunarLander-v2'
+# env_name = 'CartPole-v1'
+env_name = 'LunarLander-v2'
 # env_name = 'LaserHockey-v0'
 
 # if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten.
 train_parameters = {
-                    'load_run': 's5,,Apr23-03-27-19,save_load_test',
-                    'train_frames': 1000000,
-                    'per_buffer_size': 1000000,
-                    'per_min_frames': 1000,
+                    # 'load_run': 'save_load_test,,bandit_jax',
+                    # 'train_frames': 100000,
+                    # 'per_buffer_size': 100000,
+                    # 'per_min_frames': 10000,
                     # 'architecture': 'dense_jax',
                     # 'observation_length': 1,
                     # 'metrics': False,
-                    'bandits': False,
+                    # 'bandits': False,
                     # 'lr_finder': True,
                     }
 
 run_name_dict = {
-    'prefix': 's5',
-    'suffix': 'save_load_test',
+    'prefix': 'd64,s151,w1,d7',
+    # 'prefix': 'save_load_test',
+    'suffix': 'bandit_jax',
+    'timestamp': False,
     # 'num_envs': 'n',
     # 'batch_size': 'b',
     # 'observation_length': 'obs',

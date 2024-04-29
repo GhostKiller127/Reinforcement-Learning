@@ -1,10 +1,9 @@
 sequential observations
     learner
         targets use longer input length then trained loss
+        episode boundaries are crossed for loss and actor
 additional capabilities
-    check jax saving and loading
-    s5 model
-    sequential observations
+    multiple runs at once
     gymnasium play and show
     crypto environment
         add profit state to each kline
@@ -12,15 +11,14 @@ evaluation
     predicted mean, max or distribution of value head
 optimizations
     bandit vectorization, need to use jax vmap
-    use jax environments
-    smaller dataloader
-    initialize optimizer only for learner, copy only parameters
-    ram usage
-    float32
-    jax everything?
+    maybe
+        initialize optimizer only for learner, copy only parameters
+        ram usage
+        float32
+        jax everything
 terminal messages
     Segmentation fault
 runs
     establish baseline run, or check hyperparameters better
 next commit
-    message: added save & load, s5 and seq-obs
+    message: added bandit_jax
