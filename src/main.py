@@ -1,3 +1,4 @@
+import itertools
 from environments import Environments
 from data_collector import DataCollector
 from metric import Metric
@@ -10,28 +11,29 @@ from actor_jax import Actor
 from training import Training
 
 
-# env_name = 'CartPole-v1'
-env_name = 'LunarLander-v2'
+env_name = 'CartPole-v1'
+# env_name = 'LunarLander-v2'
 # env_name = 'LaserHockey-v0'
 
 # if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten.
-train_parameters = {
-                    # 'load_run': 'save_load_test,,bandit_jax',
-                    # 'train_frames': 100000,
-                    # 'per_buffer_size': 100000,
-                    # 'per_min_frames': 10000,
-                    # 'architecture': 'dense_jax',
-                    # 'observation_length': 1,
-                    # 'metrics': False,
-                    # 'bandits': False,
-                    # 'lr_finder': True,
+parameter_lists = {
+                    # 'load_run': ['save_load_test,,bandit_jax'],
+                    'jax_seed': [42, 69],
+                    'train_frames': [100000, 150000],
+                    'per_buffer_size': [100000],
+                    'per_min_frames': [10000],
+                    # 'architecture': ['dense_jax'],
+                    # 'observation_length': [1],
+                    'metrics': [False],
+                    # 'bandits': [False],
+                    # 'lr_finder': [True],
                     }
 
 run_name_dict = {
-    'prefix': 'd64,s151,w1,d7',
-    # 'prefix': 'save_load_test',
-    'suffix': 'bandit_jax',
+    'prefix': 'multiple_runs_test',
+    'suffix': '',
     'timestamp': False,
+    'jax_seed': 'rng',
     # 'num_envs': 'n',
     # 'batch_size': 'b',
     # 'observation_length': 'obs',
@@ -49,12 +51,17 @@ run_name_dict = {
     }
 
 
-training = Training(env_name, train_parameters, run_name_dict)
-environments = Environments(training)
-data_collector = DataCollector(training)
-metric = Metric(training)
-bandits = Bandits(training)
-learner = Learner(training)
-actor = Actor(training)
+param_combinations = list(itertools.product(*parameter_lists.values()))
 
-training.run(environments, data_collector, metric, bandits, learner, actor)
+for combination in param_combinations:
+    train_parameters = {param: value for param, value in zip(parameter_lists.keys(), combination)}
+    
+    training = Training(env_name, train_parameters, run_name_dict)
+    environments = Environments(training)
+    data_collector = DataCollector(training)
+    metric = Metric(training)
+    bandits = Bandits(training)
+    learner = Learner(training)
+    actor = Actor(training)
+
+    training.run(environments, data_collector, metric, bandits, learner, actor)

@@ -10,7 +10,6 @@ additional capabilities
 evaluation
     predicted mean, max or distribution of value head
 optimizations
-    bandit vectorization, need to use jax vmap
     maybe
         initialize optimizer only for learner, copy only parameters
         ram usage
@@ -19,6 +18,6 @@ optimizations
 terminal messages
     Segmentation fault
 runs
-    establish baseline run, or check hyperparameters better
+    baseline run with multiple seeds
 next commit
-    message: added bandit_jax
+    message: added multiple runs
