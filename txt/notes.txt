@@ -3,21 +3,19 @@ sequential observations
         targets use longer input length then trained loss
         episode boundaries are crossed for loss and actor
 additional capabilities
-    multiple runs at once
     gymnasium play and show
     crypto environment
         add profit state to each kline
 evaluation
     predicted mean, max or distribution of value head
 optimizations
-    maybe
-        initialize optimizer only for learner, copy only parameters
-        ram usage
-        float32
-        jax everything
+    initialize optimizer only for learner, copy only parameters
+    ram usage
+    float32
+    jax everything
 terminal messages
     Segmentation fault
 runs
     baseline run with multiple seeds
 next commit
-    message: added multiple runs
+    message: added inner train keys

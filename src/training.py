@@ -18,7 +18,16 @@ class Training:
 
 
     def get_config(self, env_name, train_parameters):
-        config = {key: train_parameters[key] if key in train_parameters else value for key, value in configs[env_name].items()}
+        def update_config(config, train_parameters, configs):
+            for key, value in configs.items():
+                if key in train_parameters and isinstance(value, dict):
+                    config[key] = update_config({}, train_parameters[key], value)
+                else:
+                    config[key] = train_parameters.get(key, value)
+            return config
+
+        config = update_config({}, train_parameters, configs[env_name])
+
         if config['load_run'] is not None:
             run_path = f"../runs/{env_name}/{config['load_run']}/hyperparameters.json"
             with open(run_path, "r") as file:
@@ -35,8 +44,16 @@ class Training:
 
     def get_log_dir(self, config, env_name, run_name_dict):
         if config['load_run'] is None:
-            run_name_parameters = {run_name_dict[key]: value for key, value in config.items() if key in run_name_dict}
-            run_name = ','.join([f'{key}{value}' for key, value in run_name_parameters.items()])
+            def generate_run_string(run_name_dict, configs):
+                run_string = ""
+                for key, value in run_name_dict.items():
+                    if key in configs and isinstance(value, str):
+                        run_string += f"{value}{configs[key]},"
+                    elif isinstance(value, dict) and key in configs:
+                        run_string += generate_run_string(value, configs[key])
+                return run_string.rstrip(',')
+            run_name = generate_run_string(run_name_dict, config)
+            
             if run_name_dict['prefix'] != '':
                 run_name = run_name_dict['prefix'] + ',' + run_name
             if run_name_dict['timestamp']:
