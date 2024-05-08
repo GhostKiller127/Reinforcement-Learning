@@ -6,20 +6,21 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 
 class Metric:
-    def __init__(self, training_class):
+    def __init__(self, training_class, i=0):
         self.config = training_class.config
         self.log_dir = training_class.log_dir
         self.env_name = training_class.env_name
         if self.config['metrics']:
-            self.initialize_wandb()
+            self.initialize_wandb(i)
         self.writer = SummaryWriter(log_dir=self.log_dir, max_queue=1000000000, flush_secs=300)
     
 
-    def initialize_wandb(self):
+    def initialize_wandb(self, i):
         self.run_name = '/'.join(self.log_dir.split('/')[-1:])
         if self.config['load_run'] is None:
             self.config['wandb_id'] = wandb.util.generate_id()
-        wandb.tensorboard.patch(root_logdir=self.log_dir)
+        if i == 0:
+            wandb.tensorboard.patch(root_logdir=self.log_dir)
         wandb.init(project=self.env_name,
                    name=self.run_name,
                    id=self.config['wandb_id'],

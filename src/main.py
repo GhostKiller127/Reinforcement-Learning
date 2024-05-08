@@ -3,7 +3,8 @@ from environments import Environments
 from data_collector import DataCollector
 from metric import Metric
 # from bandit import Bandits
-from bandit_jax import Bandits2 as Bandits
+# from bandit_jax import Bandits
+from bandit_jax_new import Bandits
 # from learner import Learner
 from learner_jax import Learner
 # from actor import Actor
@@ -18,36 +19,36 @@ env_name = 'CartPole-v1'
 # if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten
 # if you want to run multiple parameters, put them in a list
 train_parameters = {
-                    # "load_run": 'inner_keys_test,dd128',
+                    # "load_run": 'dense,rng69,bandit_jax_new_test',
+                    # "jax_seed": 27,
                     # "jax_seed": [27, 42, 69, 420, 1337, 2070],
-                    "train_frames": 100000,
+                    "train_frames": 1000000,
                     "per_buffer_size": 100000,
                     "per_min_frames": 10000,
                     "architecture": 'dense_jax',
                     "observation_length": 1,
-                    "parameters": {
-                        "S5": {
-                            "n_layers": 4,
-                            "d_model": 32,
-                            "ssm_size": 32,
-                            "blocks": 4,
-                            "decoder_dim": [64, 128],
-                            }},
-                    "bandit_params": {
-                          "width_": 1,
-                          "size": 151,
-                          "d": [3],
-                          },
                     "metrics": False,
                     # "bandits": False,
                     # "lr_finder": True,
+                    # "parameters": {
+                    #     "S5": {
+                    #         "n_layers": 4,
+                    #         "d_model": 32,
+                    #         "ssm_size": 32,
+                    #         "blocks": 4,
+                    #         "decoder_dim": 64,
+                    #         }},
+                    # "bandit_params": {
+                    #       "d": 9,
+                    #       },
                     }
 
 run_name_dict = {
-    "prefix": 'inner_keys_test',
-    "suffix": '',
+    "prefix": 'dense',
+    "suffix": 'bandit_jax_new_test',
+    # "suffix": 'no_bandit',
     "timestamp": False,
-    # "jax_seed": 'rng',
+    "jax_seed": 'rng',
     # "num_envs": 'n',
     # "batch_size": 'b',
     # "observation_length": 'obs',
@@ -62,16 +63,19 @@ run_name_dict = {
     # "v_loss_scaling": 'v',
     # "q_loss_scaling": 'q',
     # "p_loss_scaling": 'p',
-    "parameters": {
-        "S5": {
+    # "parameters": {
+        # "S5": {
             # "n_layers": 4,
             # "d_model": 32,
             # "ssm_size": 32,
             # "blocks": 4,
-            "decoder_dim": 'dd',
-            }},
+            # "decoder_dim": 'dd',
+            # }},
     # "bandit_params": {
-    #     "d": 'd'},
+    #     "width_": 'w',
+    #     "size": 's',
+        # "d": 'd',
+        # },
     }
 
 
@@ -89,11 +93,11 @@ def generate_combinations(param_dict):
 
 param_combinations = list(generate_combinations(train_parameters))
 
-for combination in param_combinations:
+for i, combination in enumerate(param_combinations):
     training = Training(env_name, combination, run_name_dict)
     environments = Environments(training)
     data_collector = DataCollector(training)
-    metric = Metric(training)
+    metric = Metric(training, i)
     bandits = Bandits(training)
     learner = Learner(training)
     actor = Actor(training)

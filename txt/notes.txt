@@ -9,6 +9,7 @@ additional capabilities
 evaluation
     predicted mean, max or distribution of value head
 optimizations
+    new bandit algorithm
     initialize optimizer only for learner, copy only parameters
     ram usage
     float32
@@ -18,4 +19,4 @@ terminal messages
 runs
     baseline run with multiple seeds
 next commit
-    message: added inner train keys
+    message: added bandit_jax_new

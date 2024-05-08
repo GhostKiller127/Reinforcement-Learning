@@ -1,4 +1,3 @@
-import pickle
 import random
 import numpy as np
 import jax
@@ -8,7 +7,7 @@ import itertools
 
 
 
-class Bandits2:
+class Bandits:
     def __init__(self, training_class):
         self.config = training_class.config
         self.bandit_params = self.config['bandit_params']
@@ -83,9 +82,7 @@ class Bandits2:
         x = {"tau1": tau1, "tau2": tau2, "epsilon": epsilon}
         xs = jnp.array([x[param] for param in self.params])
         gs = jnp.array([g for _ in xs])
-        output = update_vmap(xs, gs, self.ws, self.Ns, self.search_spaces, self.lrs, self.width)
-        self.ws = output[0]
-        self.Ns = output[1]
+        self.ws, self.Ns = update_vmap(xs, gs, self.ws, self.Ns, self.search_spaces, self.lrs, self.width)
 
 
     def get_candidates(self):
@@ -173,26 +170,6 @@ class Bandits2:
         
         return new_train_indeces, new_val_indeces, index_data
 
-    def update_and_get_data(self, data_collector, train_indeces, train_returns, train_envs, val_envs):
-        index_data = None
-        if data_collector.frame_count >= self.config['per_min_frames'] and self.config['bandits']:
-            for _ in range(len(train_returns)):
-                tau1, tau2, epsilon = train_indeces[_]
-                g = train_returns[_]
-                self.update_bandits(tau1, tau2, epsilon, g)
-            if len(train_returns) > 0:
-                self.index_data = self.get_index_data()
-                index_data = (np.array(x) for x in self.index_data)
-                self.all_candidates = self.get_candidates()
-            new_val_indeces = [self.index_data[:3] for _ in val_envs] if val_envs else None
-        
-        new_train_indeces = [self.sample_candidate(self.all_candidates) for _ in train_envs] if train_envs else None
-        if not data_collector.frame_count >= self.config['per_min_frames'] or not self.config['bandits']:
-            new_val_indeces = [self.sample_candidate(self.all_candidates) for _ in val_envs] if val_envs else None
-        
-        return new_train_indeces, new_val_indeces, index_data
-
-
 
 @functools.partial(jax.jit, static_argnums=())
 def get_max_indeces(s1, s2, s3, w1, w2, w3):
@@ -215,7 +192,7 @@ def update_vmap(x, g, w, N, search_space, lr, width):
     return jax.vmap(update_, in_axes=[0, 0, 0, 0, 0, 0, None])(x, g, w, N, search_space, lr, width)
 
 
-@functools.partial(jax.jit, static_argnums=(4, 5, 6))
+@functools.partial(jax.jit, static_argnums=(6,))
 def update_(x, g, w, N, search_space, lr, width):
     i = jnp.argmin(jnp.abs(search_space - x))
     start_index = jnp.maximum(i - width, 0)

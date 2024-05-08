@@ -15,6 +15,7 @@ class Training:
         self.played_frames = self.config['played_frames']
         self.train_frames = self.config['train_frames']
         self.num_envs = self.config['num_envs']
+        np.random.seed(self.config['jax_seed'])
 
 
     def get_config(self, env_name, train_parameters):
