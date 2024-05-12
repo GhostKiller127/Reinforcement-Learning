@@ -1,5 +1,4 @@
 import os
-import json
 import wandb
 import numpy as np
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -63,12 +62,12 @@ class Metric:
     def add_targets(self, targets, played_frames):
         if targets is not None and self.config['metrics']:
             rt1, rt2, vt1, vt2, pt1, pt2 = targets
-            # self.writer.add_histogram('retrace targets/rt1', rt1, global_step=played_frames, bins=20)
-            # self.writer.add_histogram('retrace targets/rt2', rt2, global_step=played_frames, bins=20)
-            # self.writer.add_histogram('vtrace targets/vt1', vt1, global_step=played_frames, bins=20)
-            # self.writer.add_histogram('vtrace targets/vt2', vt2, global_step=played_frames, bins=20)
-            # self.writer.add_histogram('policy targets/pt1', pt1, global_step=played_frames, bins=20)
-            # self.writer.add_histogram('policy targets/pt2', pt2, global_step=played_frames, bins=20)
+            self.writer.add_histogram('retrace targets/rt1', rt1, global_step=played_frames, bins=20)
+            self.writer.add_histogram('retrace targets/rt2', rt2, global_step=played_frames, bins=20)
+            self.writer.add_histogram('vtrace targets/vt1', vt1, global_step=played_frames, bins=20)
+            self.writer.add_histogram('vtrace targets/vt2', vt2, global_step=played_frames, bins=20)
+            self.writer.add_histogram('policy targets/pt1', pt1, global_step=played_frames, bins=20)
+            self.writer.add_histogram('policy targets/pt2', pt2, global_step=played_frames, bins=20)
 
 
     def add_losses(self, losses, played_frames):

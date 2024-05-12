@@ -13,6 +13,7 @@ class Bandits:
         self.bandit_params = self.config['bandit_params']
         self.log_dir = f'{training_class.log_dir}/bandits.npz'
         self.main_rng = jax.random.PRNGKey(self.config['jax_seed'])
+        np.random.seed(self.config['jax_seed'])
         if self.config['load_run'] is None:
             self.initialize_bandits()
         else:

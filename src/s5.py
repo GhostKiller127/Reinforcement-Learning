@@ -32,7 +32,7 @@ class S5():
                                                     dropout=self.configs['dropout'],
                                                     prenorm=self.configs['prenorm'],
                                                     batchnorm=self.configs['batchnorm'],
-                                                    decoder_dim=self.configs['decoder_dim'],
+                                                    decoder_dim=self.configs['d_model'] // 2,
                                                     # encoder_fn=lambda d: CRN_CNN(d, input_shape=24)
                                                     )
 

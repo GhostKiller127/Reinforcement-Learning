@@ -62,6 +62,7 @@ class Bandits:
         self.config = training_class.config
         self.bandit_params = self.config['bandit_params']
         self.log_dir = f'{training_class.log_dir}/bandits.pkl'
+        np.random.seed(self.config['jax_seed'])
         if self.config['load_run'] is None:
             self.bandits = self.initialize_bandits()
         else:

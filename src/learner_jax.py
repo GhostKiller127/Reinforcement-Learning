@@ -19,6 +19,7 @@ class Learner:
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
         self.main_rng = random.PRNGKey(self.config['jax_seed'])
+        np.random.seed(self.config['jax_seed'])
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense_jax':
             self.architecture = DenseModelJax(self.architecture_parameters)
@@ -103,6 +104,9 @@ class Learner:
                                                                                                         self.config['sequence_length'],
                                                                                                         self.config['discount'],
                                                                                                         self.learning_rate_fn,
+                                                                                                        self.config['vt_scaling'],
+                                                                                                        self.config['rt_scaling'],
+                                                                                                        self.config['pt_scaling'],
                                                                                                         self.config['v_loss_scaling'],
                                                                                                         self.config['q_loss_scaling'],
                                                                                                         self.config['p_loss_scaling'])
@@ -219,7 +223,7 @@ def calculate_values_(drop_rng,
     return v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m
 
 
-@functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14))
+@functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14, 15))
 def calculate_retrace_targets_(q1,
                                q2,
                                q1_,
@@ -234,7 +238,8 @@ def calculate_retrace_targets_(q1,
                                batch_size,
                                bootstrap_length,
                                sequence_length,
-                               discount):
+                               discount,
+                               rt_scaling):
     
     q1 = jax.lax.stop_gradient(q1).squeeze()
     q2 = jax.lax.stop_gradient(q2).squeeze()
@@ -274,8 +279,8 @@ def calculate_retrace_targets_(q1,
     rt1 = q1_[:, :sequence_length] + jnp.sum(gamma * c * td1, axis=2)
     rt2 = q2_[:, :sequence_length] + jnp.sum(gamma * c * td2, axis=2)
 
-    rt1 = scale_value1(rt1, reward_scaling_1)
-    rt2 = scale_value2(rt2, reward_scaling_2)
+    rt1 = scale_value1(rt1 * rt_scaling, reward_scaling_1)
+    rt2 = scale_value2(rt2 * rt_scaling, reward_scaling_2)
     rtd1 = rt1 - q1[:, :sequence_length]
     rtd2 = rt2 - q2[:, :sequence_length]
     rt1 = jnp.expand_dims(rt1, axis=2)
@@ -284,7 +289,7 @@ def calculate_retrace_targets_(q1,
     return rt1, rt2, rtd1, rtd2
 
 
-@functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11))
+@functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11, 12, 13))
 def calculate_vtrace_targets_(v1_,
                               v2_,
                               p,
@@ -296,7 +301,9 @@ def calculate_vtrace_targets_(v1_,
                               batch_size,
                               bootstrap_length,
                               sequence_length,
-                              discount):
+                              discount,
+                              vt_scaling,
+                              pt_scaling):
     
     v1_ = invert_scale1(v1_.squeeze(), reward_scaling_1)
     v2_ = invert_scale2(v2_.squeeze(), reward_scaling_2)
@@ -341,10 +348,10 @@ def calculate_vtrace_targets_(v1_,
     pt2 = (rho_t[:, :sequence_length] *
            (batch['r'][:, :sequence_length] + discount * vt2[:, 1:] - v2_[:, :sequence_length]))
 
-    vt1 = scale_value1(vt1, reward_scaling_1)
-    vt2 = scale_value2(vt2, reward_scaling_2)
-    pt1 = scale_value1(pt1, reward_scaling_1)
-    pt2 = scale_value2(pt2, reward_scaling_2)
+    vt1 = scale_value1(vt1 * vt_scaling, reward_scaling_1)
+    vt2 = scale_value2(vt2 * vt_scaling, reward_scaling_2)
+    pt1 = scale_value1(pt1 * pt_scaling, reward_scaling_1)
+    pt2 = scale_value2(pt2 * pt_scaling, reward_scaling_2)
 
     vt1 = jnp.expand_dims(vt1[:,:-1], axis=2)
     vt2 = jnp.expand_dims(vt2[:,:-1], axis=2)
@@ -377,7 +384,7 @@ def calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
     return loss, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
 
 
-@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18))
+@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21))
 def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                                 reward_scaling_1,
                                                                 reward_scaling_2,
@@ -388,6 +395,9 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                                 sequence_length,
                                                                 discount,
                                                                 learning_rate_fn,
+                                                                vt_scaling,
+                                                                rt_scaling,
+                                                                pt_scaling,
                                                                 v_loss_scaling,
                                                                 q_loss_scaling,
                                                                 p_loss_scaling):
@@ -416,7 +426,8 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                         batch_size,
                                                         bootstrap_length,
                                                         sequence_length,
-                                                        discount)
+                                                        discount,
+                                                        rt_scaling)
         
         vt1, vt2, pt1, pt2 = calculate_vtrace_targets_(v1_,
                                                         v2_,
@@ -429,7 +440,9 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                         batch_size,
                                                         bootstrap_length,
                                                         sequence_length,
-                                                        discount)
+                                                        discount,
+                                                        vt_scaling,
+                                                        pt_scaling)
         
         loss, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
                                                                                                                                     sequence_length,

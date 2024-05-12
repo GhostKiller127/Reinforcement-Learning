@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-import random
 import sys, math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -82,12 +81,13 @@ class LaserHockeyEnv(gym.Env, EzPickle):
     TRAIN_SHOOTING = 1
     TRAIN_DEFENSE = 2
 
-    def __init__(self, mode=NORMAL, mode_='val'):
+    def __init__(self, mode=NORMAL, mode_='val', seed=None):
         """ mode is the game mode: NORMAL, TRAIN_SHOOTING, TRAIN_DEFENSE,
         it can be changed later using the reset function
         """
         EzPickle.__init__(self)
-        self.seed()
+        np.random.seed(seed)
+        self.seed(seed)
         self.viewer = None
         self.mode = mode
         self.mode_ = mode_
@@ -103,7 +103,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
         self.done = False
         self.truncated = False
         self.winner = 0
-        self.one_starts = random.choice([True, False])
+        self.one_starts = np.random.choice([True, False])
 
         self.max_puck_speed = 20
 
@@ -342,7 +342,7 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
 
 
-    def reset(self, one_starting = None, mode = None):
+    def reset(self, one_starting=None, mode=None, seed=None):
         self._destroy()
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref

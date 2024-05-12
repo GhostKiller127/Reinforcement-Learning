@@ -6,6 +6,7 @@ class DataCollector:
     def __init__(self, training_class):
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/data_collector.npz'
+        np.random.seed(self.config['jax_seed'])
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         self.train_envs = self.config['num_envs'] - self.config['val_envs']
         self.max_sequences = self.get_max_sequences()
@@ -126,6 +127,10 @@ class DataCollector:
 
 
     def load_batched_sequences(self):
+        # mask = np.isnan(self.priorities)
+        # print(np.count_nonzero(mask))
+        # priorities = self.priorities[~mask]
+
         probabilities = self.priorities**self.config['per_priority_exponent'] / np.sum(self.priorities**self.config['per_priority_exponent'])
         sequence_indeces = np.random.choice(len(self.priorities), size=self.config['batch_size'], p=probabilities, replace=False)
         batched_sequences = {key: value[sequence_indeces] for key, value in self.all_data.items()}

@@ -1,6 +1,6 @@
 import numpy as np
 import gymnasium as gym
-from gymnasium.vector import SyncVectorEnv, AsyncVectorEnv
+from gymnasium.vector import SyncVectorEnv
 import laser_hockey_env as lh
 
 
@@ -10,6 +10,7 @@ class Environments:
         self.config = training_class.config
         self.training = training
         self.render_mode = render_mode
+        np.random.seed(self.config['jax_seed'])
         self.envs = self.get_environments()
         self.basic = lh.BasicOpponent()
         self.action_space = self.get_action_space()
@@ -18,13 +19,13 @@ class Environments:
     def get_environments(self):
         if self.training:
             if self.env_name == 'LaserHockey-v0':
-                train_envs = [lambda: lh.LaserHockeyEnv(mode_='train') for _ in range(self.config['num_envs'] - self.config['val_envs'])]
-                val_envs = [lambda: lh.LaserHockeyEnv(mode_='val') for _ in range(self.config['val_envs'])]
+                seed = np.random.randint(1e10)
+                train_envs = [lambda: lh.LaserHockeyEnv(mode_='train', seed=seed) for _ in range(self.config['num_envs'] - self.config['val_envs'])]
+                val_envs = [lambda: lh.LaserHockeyEnv(mode_='val', seed=seed) for _ in range(self.config['val_envs'])]
                 envs = train_envs + val_envs
-                envs = AsyncVectorEnv(envs)
             else:
                 envs = [lambda: gym.make(self.env_name) for _ in range(self.config['num_envs'])]
-                envs = SyncVectorEnv(envs)
+            envs = SyncVectorEnv(envs)
         else:
             if self.env_name == 'LaserHockey-v0':
                 envs = lh.LaserHockeyEnv(mode_='val')
@@ -34,7 +35,9 @@ class Environments:
 
 
     def reset(self):
-        observations, infos = self.envs.reset()
+        observations, infos = self.envs.reset(seed=self.config['jax_seed'])
+        if observations.ndim == 1:
+            observations = observations[np.newaxis, :]
         self.observations = np.tile(observations[:, np.newaxis, :], (1, self.config['observation_length'], 1))
         if self.env_name == 'LaserHockey-v0' and self.render_mode == 'human':
             self.envs.render()

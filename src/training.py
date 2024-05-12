@@ -52,8 +52,8 @@ class Training:
                         run_string += f"{value}{configs[key]},"
                     elif isinstance(value, dict) and key in configs:
                         run_string += generate_run_string(value, configs[key])
-                return run_string.rstrip(',')
-            run_name = generate_run_string(run_name_dict, config)
+                return run_string
+            run_name = generate_run_string(run_name_dict, config).rstrip(',')
             
             if run_name_dict['prefix'] != '':
                 run_name = run_name_dict['prefix'] + ',' + run_name

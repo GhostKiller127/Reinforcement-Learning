@@ -9,14 +9,19 @@ additional capabilities
 evaluation
     predicted mean, max or distribution of value head
 optimizations
-    new bandit algorithm
+    target scaling
+    better/correct seeding
     initialize optimizer only for learner, copy only parameters
     ram usage
     float32
     jax everything
 terminal messages
     Segmentation fault
-runs
-    baseline run with multiple seeds
+    probabilities containing NaN
+hyperparameters
+    lower bootstrap length
+    lower d_target
+    lr finder
+    test scalings
 next commit
-    message: added bandit_jax_new
+    message: added many tiny optimizations

@@ -11,6 +11,7 @@ class Bandits:
         self.bandit_params = self.config['bandit_params']
         self.log_dir = f'{training_class.log_dir}/bandits.npz'
         self.main_rng = jax.random.PRNGKey(self.config['jax_seed'])
+        np.random.seed(self.config['jax_seed'])
         if self.config['load_run'] is None:
             self.initialize_bandits()
         else:
@@ -45,7 +46,7 @@ class Bandits:
                     offset = np.random.uniform(1e-6, max_offset)
                     pad_length = self.max_size - size
                     w = np.full(self.max_size, -np.inf)
-                    w[pad_length:] = 0
+                    w[pad_length:] = self.bandit_params['weight_init']
                     mask = np.zeros(self.max_size, dtype=bool)
                     mask[pad_length:] = 1
                     search_space = np.linspace(l, r, size) + offset
@@ -167,8 +168,8 @@ class Bandits:
             self.index_data = self.get_index_data()
             index_data = (np.array(x) for x in self.index_data)
         if train_envs:
-            new_train_indeces = self.sample_all_candidates(train_envs)
-        new_val_indeces = [self.index_data[:3] for _ in val_envs] if val_envs else None
+            new_train_indeces = np.array(self.sample_all_candidates(train_envs))
+        new_val_indeces = np.array([self.index_data[:3] for _ in val_envs]) if val_envs else None
         return new_train_indeces, new_val_indeces, index_data
 
 
@@ -262,10 +263,9 @@ def get_max_indeces_vmap(sample_rngs, search_spaces, ws, num_envs, val_envs, num
 @jax.jit
 def get_max_indeces_(sample_rng, search_spaces, ws):
     max_indeces = jnp.argmax(ws, axis=1)
-    max_weights = jnp.max(ws, axis=1)
     sample_rngs = jax.random.split(sample_rng, search_spaces.shape[0])
     samples = jax.vmap(get_elements)(search_spaces, max_indeces, sample_rngs)
-    return jnp.sum(max_weights * samples) / jnp.sum(max_weights)
+    return jnp.mean(samples)
 
 
 @jax.jit

@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from flax import serialization
 from flax.training import train_state
 import functools
+import orbax.checkpoint as ocp
 import optax
 from architectures_jax import DenseModelJax
 from s5 import S5
@@ -25,14 +26,15 @@ class Actor:
         self.actor2_params = self.initialize_parameters()
         self.actor1 = train_state.TrainState.create(apply_fn=self.architecture.apply, params=self.actor1_params, tx=optax.adam(0))
         self.actor2 = train_state.TrainState.create(apply_fn=self.architecture.apply, params=self.actor2_params, tx=optax.adam(0))
+        self.checkpointer = ocp.Checkpointer(ocp.PyTreeCheckpointHandler(write_tree_metadata=True))
     
 
     def initialize_parameters(self):
         self.main_rng, init_rng, drop_rng = jax.random.split(self.main_rng, num=3)
         if self.config['architecture'] == 'S5':
-            return self.architecture.init({"params": init_rng, "dropout": drop_rng}, np.ones(self.architecture_parameters['input_shape']), None)["params"]
+            return self.architecture.init({"params": init_rng, "dropout": drop_rng}, jnp.ones(self.architecture_parameters['input_shape']), None)["params"]
         else:
-            return self.architecture.init({"params": init_rng, "dropout": drop_rng}, np.ones(self.architecture_parameters['input_shape']))['params']
+            return self.architecture.init({"params": init_rng, "dropout": drop_rng}, jnp.ones(self.architecture_parameters['input_shape']))['params']
 
 
     def pull_weights(self, learner=None, training=True):
@@ -41,12 +43,8 @@ class Actor:
                 self.actor1 = self.actor1.replace(params=learner.learner1.params)
                 self.actor2 = self.actor2.replace(params=learner.learner2.params)
             else:
-                with open(f'{self.log_dir}/learner1.pkl', 'rb') as f:
-                    loaded_state = serialization.from_bytes(train_state.TrainState, f.read())
-                    self.actor1 = self.actor1.replace(params=loaded_state['params'])
-                with open(f'{self.log_dir}/learner2.pkl', 'rb') as f:
-                    loaded_state = serialization.from_bytes(train_state.TrainState, f.read())
-                    self.actor2 = self.actor2.replace(params=loaded_state['params'])
+                self.actor1 = self.checkpointer.restore(f'{self.log_dir}/learner1', item=self.actor1)
+                self.actor2 = self.checkpointer.restore(f'{self.log_dir}/learner2', item=self.actor2)
         self.count += 1
         
 

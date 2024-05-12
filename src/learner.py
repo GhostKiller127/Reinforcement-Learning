@@ -13,6 +13,7 @@ class Learner:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/models'
+        np.random.seed(self.config['jax_seed'])
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.config['mixed_precision'])
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense':
