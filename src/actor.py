@@ -34,6 +34,8 @@ class Actor:
         with torch.amp.autocast(device_type='cuda', dtype=torch.float32):
             v1, a1 = self.actor1(observations)
             v2, a2 = self.actor2(observations)
+        v1, a1 = v1[:, -1], a1[:, -1, :]
+        v2, a2 = v2[:, -1], a2[:, -1, :]
 
         indices = torch.tensor(indices, dtype=torch.float32).to(self.device)
         tau1 = indices[:,0].unsqueeze(1)
@@ -50,8 +52,8 @@ class Actor:
     def get_actions(self, observations, indeces, stochastic=True, random=False, training=False):
         policy = self.calculate_policy(observations, indeces)
         if random:
-            actions = [self.env.single_action_space.sample() for _ in range(self.config['num_envs'])]
-            action_probs = np.ones(actions) / self.config['num_envs']
+            actions = [self.env.single_action_space.sample() for _ in range(self.config['train_envs'] + self.config['val_envs'])]
+            action_probs = np.ones(actions) / (self.config['train_envs'] + self.config['val_envs'])
         elif stochastic:
             action_dist = dist.Categorical(policy)
             actions = action_dist.sample()

@@ -7,10 +7,10 @@ additional capabilities
     crypto environment
         add profit state to each kline
 evaluation
-    predicted mean, max or distribution of value head
+    targets mean and std
 optimizations
-    target scaling
-    better/correct seeding
+    correct target scaling
+    correct seeding
     initialize optimizer only for learner, copy only parameters
     ram usage
     float32
@@ -18,10 +18,5 @@ optimizations
 terminal messages
     Segmentation fault
     probabilities containing NaN
-hyperparameters
-    lower bootstrap length
-    lower d_target
-    lr finder
-    test scalings
 next commit
-    message: added many tiny optimizations
+    message: added better reward scaling & target metrics

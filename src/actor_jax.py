@@ -1,7 +1,6 @@
 import numpy as np
 import jax
 import jax.numpy as jnp
-from flax import serialization
 from flax.training import train_state
 import functools
 import orbax.checkpoint as ocp
@@ -56,7 +55,7 @@ class Actor:
                                                   observations,
                                                   indeces,
                                                   self.architecture_parameters['action_dim'],
-                                                  self.config['num_envs'],
+                                                  self.config['train_envs'],
                                                   self.config['val_envs'],
                                                   stochastic,
                                                   random_,
@@ -68,7 +67,7 @@ class Actor:
 
 
 @functools.partial(jax.jit, static_argnums=(5, 6, 7, 8, 9, 10))
-def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim, num_envs, val_envs, stochastic, random_, training):
+def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim, train_envs, val_envs, stochastic, random_, training):
     v1, a1 = actor1.apply_fn({'params': actor1.params}, observations, False)
     v2, a2 = actor2.apply_fn({'params': actor2.params}, observations, False)
     v1, a1 = v1[:, -1], a1[:, -1, :]
@@ -82,7 +81,7 @@ def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim
     policy = epsilon * softmax_1 + (1 - epsilon) * softmax_2
 
     if random_:
-        actions = jax.random.randint(act_rng, (num_envs,), 0, action_dim)
+        actions = jax.random.randint(act_rng, (train_envs + val_envs,), 0, action_dim)
         action_probs = jnp.ones_like(actions) / action_dim
     elif stochastic:
         actions = jax.random.categorical(act_rng, jnp.log(policy), axis=-1)
@@ -92,6 +91,5 @@ def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim
         action_probs = jnp.take_along_axis(policy, actions[:, None], axis=1)
     if training:
         greedy_actions = jnp.argmax(policy, axis=1)
-        mask = jnp.arange(num_envs) >= (num_envs - val_envs // 2)
-        actions = jnp.where(mask, greedy_actions, actions)
+        actions = actions.at[-(val_envs // 2):].set(greedy_actions[-(val_envs // 2):])
     return actions, action_probs

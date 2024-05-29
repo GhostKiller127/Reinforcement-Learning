@@ -20,11 +20,11 @@ class Environments:
         if self.training:
             if self.env_name == 'LaserHockey-v0':
                 seed = np.random.randint(1e10)
-                train_envs = [lambda: lh.LaserHockeyEnv(mode_='train', seed=seed) for _ in range(self.config['num_envs'] - self.config['val_envs'])]
+                train_envs = [lambda: lh.LaserHockeyEnv(mode_='train', seed=seed) for _ in range(self.config['train_envs'])]
                 val_envs = [lambda: lh.LaserHockeyEnv(mode_='val', seed=seed) for _ in range(self.config['val_envs'])]
                 envs = train_envs + val_envs
             else:
-                envs = [lambda: gym.make(self.env_name) for _ in range(self.config['num_envs'])]
+                envs = [lambda: gym.make(self.env_name) for _ in range(self.config['train_envs'] + self.config['val_envs'])]
             envs = SyncVectorEnv(envs)
         else:
             if self.env_name == 'LaserHockey-v0':
@@ -34,8 +34,11 @@ class Environments:
         return envs
 
 
-    def reset(self):
-        observations, infos = self.envs.reset(seed=self.config['jax_seed'])
+    def reset(self, random=False):
+        if random:
+            observations, infos = self.envs.reset()
+        else:
+            observations, infos = self.envs.reset(seed=self.config['jax_seed'])
         if observations.ndim == 1:
             observations = observations[np.newaxis, :]
         self.observations = np.tile(observations[:, np.newaxis, :], (1, self.config['observation_length'], 1))

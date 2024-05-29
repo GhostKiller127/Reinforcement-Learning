@@ -95,8 +95,9 @@ class Learner:
     def train_batch(self, batch):
         self.main_rng, drop_rng = random.split(self.main_rng)
         self.learner1, self.learner2, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = train_batch_(drop_rng, self.learner1, self.learner2, self.target1, self.target2, batch, self.update_count,
-                                                                                                        self.config['reward_scaling_1'],
-                                                                                                        self.config['reward_scaling_2'],
+                                                                                                        self.config['reward_scaling_y1'],
+                                                                                                        self.config['reward_scaling_y2'],
+                                                                                                        self.config['reward_scaling_x'],
                                                                                                         self.config['c_clip'],
                                                                                                         self.config['rho_clip'],
                                                                                                         self.config['batch_size'],
@@ -134,31 +135,37 @@ class Learner:
 
 
 
-@functools.partial(jax.jit, static_argnums=(1,))
-def scale_value1(x, scale):
-    x_log = jnp.log(jnp.abs(x) + 1) * scale
+@functools.partial(jax.jit, static_argnums=(1,2))
+def scale_value1(x, x_scale, y_scale):
+    x = x * x_scale
+    x_log = jnp.log(jnp.abs(x) + 1)
     x = jnp.where(jnp.sign(x) > 0, x_log * 2, x_log * -1)
+    x = x * y_scale
     return x
 
 
-@functools.partial(jax.jit, static_argnums=(1,))
-def scale_value2(x, scale):
-    x = (jnp.sign(x) * ((jnp.abs(x) + 1.)**(1/2) - 1.) + 0.001 * x) * scale
+@functools.partial(jax.jit, static_argnums=(1,2))
+def scale_value2(x, x_scale, y_scale):
+    x = x * x_scale
+    x = (jnp.sign(x) * ((jnp.abs(x) + 1.)**(1/2) - 1.) + 0.001 * x)
+    x = x * y_scale
     return x
 
 
-@functools.partial(jax.jit, static_argnums=(1,))
-def invert_scale1(h, scale):
-    h = h / scale
+@functools.partial(jax.jit, static_argnums=(1,2))
+def invert_scale1(h, x_scale, y_scale):
+    h = h / y_scale
     h_ = jnp.where(jnp.sign(h) > 0, jnp.abs(h) / 2, jnp.abs(h))
     h_ = jnp.sign(h) * (jnp.exp(h_) - 1)
+    h_ = h_ / x_scale
     return h_
 
 
-@functools.partial(jax.jit, static_argnums=(1,))
-def invert_scale2(h, scale):
-    h = h / scale
+@functools.partial(jax.jit, static_argnums=(1,2))
+def invert_scale2(h, x_scale, y_scale):
+    h = h / y_scale
     h = jnp.sign(h) * ((((1 + 4*0.001*(jnp.abs(h) + 1 + 0.001))**(1/2) - 1) / (2*0.001))**2 - 1)
+    h = h / x_scale
     return h
 
 
@@ -207,12 +214,12 @@ def calculate_values_(drop_rng,
     p1 = jnp.take_along_axis(policy1, a, axis=2)
     p2 = jnp.take_along_axis(policy2, a, axis=2)
     
-    a1 = jnp.take_along_axis(a1, a, axis=2) + jnp.sum(jax.lax.stop_gradient(policy1) * a1, axis=2, keepdims=True)
-    a2 = jnp.take_along_axis(a2, a, axis=2) + jnp.sum(jax.lax.stop_gradient(policy2) * a2, axis=2, keepdims=True)
+    a1 = jnp.take_along_axis(a1, a, axis=2) - jnp.sum(jax.lax.stop_gradient(policy1) * a1, axis=2, keepdims=True)
+    a2 = jnp.take_along_axis(a2, a, axis=2) - jnp.sum(jax.lax.stop_gradient(policy2) * a2, axis=2, keepdims=True)
     q1 = a1 + jax.lax.stop_gradient(v1)
     q2 = a2 + jax.lax.stop_gradient(v2)
-    a1_ = a1_ + jnp.sum(policy_ * a1_, axis=2, keepdims=True)
-    a2_ = a2_ + jnp.sum(policy_ * a2_, axis=2, keepdims=True)
+    a1_ = a1_ - jnp.sum(policy_ * a1_, axis=2, keepdims=True)
+    a2_ = a2_ - jnp.sum(policy_ * a2_, axis=2, keepdims=True)
     q1_ = a1_ + v1_
     q2_ = a2_ + v2_
     q1_m = jnp.sum(jax.lax.stop_gradient(policy1) * q1_, axis=2, keepdims=True)
@@ -223,7 +230,7 @@ def calculate_values_(drop_rng,
     return v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m
 
 
-@functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14, 15))
+@functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14, 15, 16))
 def calculate_retrace_targets_(q1,
                                q2,
                                q1_,
@@ -232,8 +239,9 @@ def calculate_retrace_targets_(q1,
                                q2_m,
                                p,
                                batch,
-                               reward_scaling_1,
-                               reward_scaling_2,
+                               reward_scaling_y1,
+                               reward_scaling_y2,
+                               reward_scaling_x,
                                c_clip,
                                batch_size,
                                bootstrap_length,
@@ -244,10 +252,10 @@ def calculate_retrace_targets_(q1,
     q1 = jax.lax.stop_gradient(q1).squeeze()
     q2 = jax.lax.stop_gradient(q2).squeeze()
     p = jax.lax.stop_gradient(p)
-    q1_ = invert_scale1(q1_.squeeze(), reward_scaling_1)
-    q2_ = invert_scale2(q2_.squeeze(), reward_scaling_2)
-    q1_m = invert_scale1(q1_m.squeeze(), reward_scaling_1)
-    q2_m = invert_scale2(q2_m.squeeze(), reward_scaling_2)
+    q1_ = invert_scale1(q1_.squeeze(), reward_scaling_x, reward_scaling_y1)
+    q2_ = invert_scale2(q2_.squeeze(), reward_scaling_x, reward_scaling_y2)
+    q1_m = invert_scale1(q1_m.squeeze(), reward_scaling_x, reward_scaling_y1)
+    q2_m = invert_scale2(q2_m.squeeze(), reward_scaling_x, reward_scaling_y2)
 
     c = jnp.minimum(p / batch['a_p'], c_clip).squeeze()
     c = moving_window(c[:, :-2], (batch_size, bootstrap_length)).transpose((1, 0, 2))
@@ -279,8 +287,8 @@ def calculate_retrace_targets_(q1,
     rt1 = q1_[:, :sequence_length] + jnp.sum(gamma * c * td1, axis=2)
     rt2 = q2_[:, :sequence_length] + jnp.sum(gamma * c * td2, axis=2)
 
-    rt1 = scale_value1(rt1 * rt_scaling, reward_scaling_1)
-    rt2 = scale_value2(rt2 * rt_scaling, reward_scaling_2)
+    rt1 = scale_value1(rt1, reward_scaling_x, reward_scaling_y1)
+    rt2 = scale_value2(rt2, reward_scaling_x, reward_scaling_y2)
     rtd1 = rt1 - q1[:, :sequence_length]
     rtd2 = rt2 - q2[:, :sequence_length]
     rt1 = jnp.expand_dims(rt1, axis=2)
@@ -289,13 +297,14 @@ def calculate_retrace_targets_(q1,
     return rt1, rt2, rtd1, rtd2
 
 
-@functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11, 12, 13))
+@functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14))
 def calculate_vtrace_targets_(v1_,
                               v2_,
                               p,
                               batch,
-                              reward_scaling_1,
-                              reward_scaling_2,
+                              reward_scaling_y1,
+                              reward_scaling_y2,
+                              reward_scaling_x,
                               c_clip,
                               rho_clip,
                               batch_size,
@@ -305,8 +314,8 @@ def calculate_vtrace_targets_(v1_,
                               vt_scaling,
                               pt_scaling):
     
-    v1_ = invert_scale1(v1_.squeeze(), reward_scaling_1)
-    v2_ = invert_scale2(v2_.squeeze(), reward_scaling_2)
+    v1_ = invert_scale1(v1_.squeeze(), reward_scaling_x, reward_scaling_y1)
+    v2_ = invert_scale2(v2_.squeeze(), reward_scaling_x, reward_scaling_y2)
     p = jax.lax.stop_gradient(p)
     c = jnp.minimum(p / batch['a_p'], c_clip).squeeze()
     rho_t = jnp.minimum(p / batch['a_p'], rho_clip).squeeze()
@@ -348,10 +357,10 @@ def calculate_vtrace_targets_(v1_,
     pt2 = (rho_t[:, :sequence_length] *
            (batch['r'][:, :sequence_length] + discount * vt2[:, 1:] - v2_[:, :sequence_length]))
 
-    vt1 = scale_value1(vt1 * vt_scaling, reward_scaling_1)
-    vt2 = scale_value2(vt2 * vt_scaling, reward_scaling_2)
-    pt1 = scale_value1(pt1 * pt_scaling, reward_scaling_1)
-    pt2 = scale_value2(pt2 * pt_scaling, reward_scaling_2)
+    vt1 = scale_value1(vt1, reward_scaling_x, reward_scaling_y1)
+    vt2 = scale_value2(vt2, reward_scaling_x, reward_scaling_y2)
+    pt1 = scale_value1(pt1 * pt_scaling, reward_scaling_x, reward_scaling_y1)
+    pt2 = scale_value2(pt2 * pt_scaling, reward_scaling_x, reward_scaling_y2)
 
     vt1 = jnp.expand_dims(vt1[:,:-1], axis=2)
     vt2 = jnp.expand_dims(vt2[:,:-1], axis=2)
@@ -361,7 +370,7 @@ def calculate_vtrace_targets_(v1_,
     return vt1, vt2, pt1, pt2
 
 
-@functools.partial(jax.jit, static_argnums=(12,))
+@functools.partial(jax.jit, static_argnums=(12, 13, 14, 15))
 def calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
                                                                         sequence_length,
                                                                         v_loss_scaling,
@@ -376,18 +385,20 @@ def calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
     p_loss2 = jnp.mean(pt2 * -jnp.log(p2[:,:sequence_length] + 1e-6))
 
     loss1 = ((v_loss_scaling * v_loss1 + q_loss_scaling * q_loss1 + p_loss_scaling * p_loss1) /
-            (v_loss_scaling + q_loss_scaling + p_loss_scaling))
+             (v_loss_scaling + q_loss_scaling + p_loss_scaling))
     loss2 = ((v_loss_scaling * v_loss2 + q_loss_scaling * q_loss2 + p_loss_scaling * p_loss2) /
-            (v_loss_scaling + q_loss_scaling + p_loss_scaling))
+             (v_loss_scaling + q_loss_scaling + p_loss_scaling))
+
     loss = loss1 + loss2
 
     return loss, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
 
 
-@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21))
+@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22))
 def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
-                                                                reward_scaling_1,
-                                                                reward_scaling_2,
+                                                                reward_scaling_y1,
+                                                                reward_scaling_y2,
+                                                                reward_scaling_x,
                                                                 c_clip,
                                                                 rho_clip,
                                                                 batch_size,
@@ -405,36 +416,38 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
         
         v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m = calculate_values_(drop_rng,
                                                                                    params1,
-                                                                                    params2,
-                                                                                    learner1,
-                                                                                    learner2,
-                                                                                    target1,
-                                                                                    target2,
-                                                                                    batch)
+                                                                                   params2,
+                                                                                   learner1,
+                                                                                   learner2,
+                                                                                   target1,
+                                                                                   target2,
+                                                                                   batch)
         
         rt1, rt2, rtd1, rtd2 = calculate_retrace_targets_(q1,
-                                                        q2,
-                                                        q1_,
-                                                        q2_,
-                                                        q1_m,
-                                                        q2_m,
-                                                        p1,
-                                                        batch,
-                                                        reward_scaling_1,
-                                                        reward_scaling_2,
-                                                        c_clip,
-                                                        batch_size,
-                                                        bootstrap_length,
-                                                        sequence_length,
-                                                        discount,
-                                                        rt_scaling)
+                                                          q2,
+                                                          q1_,
+                                                          q2_,
+                                                          q1_m,
+                                                          q2_m,
+                                                          p1,
+                                                          batch,
+                                                          reward_scaling_y1,
+                                                          reward_scaling_y2,
+                                                          reward_scaling_x,
+                                                          c_clip,
+                                                          batch_size,
+                                                          bootstrap_length,
+                                                          sequence_length,
+                                                          discount,
+                                                          rt_scaling)
         
         vt1, vt2, pt1, pt2 = calculate_vtrace_targets_(v1_,
                                                         v2_,
                                                         p1,
                                                         batch,
-                                                        reward_scaling_1,
-                                                        reward_scaling_2,
+                                                        reward_scaling_y1,
+                                                        reward_scaling_y2,
+                                                        reward_scaling_x,
                                                         c_clip,
                                                         rho_clip,
                                                         batch_size,

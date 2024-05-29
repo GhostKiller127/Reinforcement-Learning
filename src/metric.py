@@ -11,7 +11,7 @@ class Metric:
         self.env_name = training_class.env_name
         if self.config['metrics']:
             self.initialize_wandb(i)
-        self.writer = SummaryWriter(log_dir=self.log_dir, max_queue=1000000000, flush_secs=300)
+        self.writer = SummaryWriter(log_dir=self.log_dir, max_queue=1e10, flush_secs=30)
     
 
     def initialize_wandb(self, i):
@@ -37,8 +37,8 @@ class Metric:
     
     def add_val_return(self, val_returns, val_envs, played_frames):
         if self.config['metrics']:
-            stochastic_returns = [val_returns[i] for i, env in enumerate(val_envs) if env < (self.config['num_envs'] - self.config['val_envs'] // 2)]
-            greedy_returns = [val_returns[i] for i, env in enumerate(val_envs) if env >= (self.config['num_envs'] - self.config['val_envs'] // 2)]
+            stochastic_returns = [val_returns[i] for i, env in enumerate(val_envs) if env < (self.config['train_envs'] + self.config['val_envs'] // 2)]
+            greedy_returns = [val_returns[i] for i, env in enumerate(val_envs) if env >= (self.config['train_envs'] + self.config['val_envs'] // 2)]
             if stochastic_returns:
                 self.writer.add_scalar('_return/val_stochastic', np.mean(stochastic_returns), global_step=played_frames)
             if greedy_returns:
@@ -62,12 +62,24 @@ class Metric:
     def add_targets(self, targets, played_frames):
         if targets is not None and self.config['metrics']:
             rt1, rt2, vt1, vt2, pt1, pt2 = targets
-            self.writer.add_histogram('retrace targets/rt1', rt1, global_step=played_frames, bins=20)
-            self.writer.add_histogram('retrace targets/rt2', rt2, global_step=played_frames, bins=20)
-            self.writer.add_histogram('vtrace targets/vt1', vt1, global_step=played_frames, bins=20)
-            self.writer.add_histogram('vtrace targets/vt2', vt2, global_step=played_frames, bins=20)
-            self.writer.add_histogram('policy targets/pt1', pt1, global_step=played_frames, bins=20)
-            self.writer.add_histogram('policy targets/pt2', pt2, global_step=played_frames, bins=20)
+            # self.writer.add_histogram('retrace targets/rt1', rt1, global_step=played_frames, bins=30)
+            # self.writer.add_histogram('retrace targets/rt2', rt2, global_step=played_frames, bins=30)
+            # self.writer.add_histogram('vtrace targets/vt1', vt1, global_step=played_frames, bins=30)
+            # self.writer.add_histogram('vtrace targets/vt2', vt2, global_step=played_frames, bins=30)
+            # self.writer.add_histogram('policy targets/pt1', pt1, global_step=played_frames, bins=30)
+            # self.writer.add_histogram('policy targets/pt2', pt2, global_step=played_frames, bins=30)
+            self.writer.add_scalar('retrace targets/rt1_mean', np.mean(rt1), global_step=played_frames)
+            self.writer.add_scalar('retrace targets/rt1_std', np.std(rt1), global_step=played_frames)
+            self.writer.add_scalar('retrace targets/rt2_mean', np.mean(rt2), global_step=played_frames)
+            self.writer.add_scalar('retrace targets/rt2_std', np.std(rt2), global_step=played_frames)
+            self.writer.add_scalar('vtrace targets/vt1_mean', np.mean(vt1), global_step=played_frames)
+            self.writer.add_scalar('vtrace targets/vt1_std', np.std(vt1), global_step=played_frames)
+            self.writer.add_scalar('vtrace targets/vt2_mean', np.mean(vt2), global_step=played_frames)
+            self.writer.add_scalar('vtrace targets/vt2_std', np.std(vt2), global_step=played_frames)
+            self.writer.add_scalar('policy targets/pt1_mean', np.mean(pt1), global_step=played_frames)
+            self.writer.add_scalar('policy targets/pt1_std', np.std(pt1), global_step=played_frames)
+            self.writer.add_scalar('policy targets/pt2_mean', np.mean(pt2), global_step=played_frames)
+            self.writer.add_scalar('policy targets/pt2_std', np.std(pt2), global_step=played_frames)
 
 
     def add_losses(self, losses, played_frames):

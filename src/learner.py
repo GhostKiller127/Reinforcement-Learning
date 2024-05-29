@@ -31,7 +31,6 @@ class Learner:
             self.scheduler2 = torch.optim.lr_scheduler.ExponentialLR(self.optimizer2, gamma=(end_lr/initial_lr)**gamma)
             if self.config['load_run'] is None:
                 os.makedirs(self.log_dir, exist_ok=True)
-                self.save_weights_and_data_collector()
             else:
                 self.load_weights()
             self.update_target_weights()
@@ -47,14 +46,11 @@ class Learner:
         return self.config["learning_rate"] / 1e3, self.config["learning_rate"], 1 / self.config['warmup_steps']
 
 
-    def save_weights_and_data_collector(self, data_collector=None):
-        if self.update_count % self.config['d_push'] == 0:
-            torch.save(self.learner1.state_dict(), f'{self.log_dir}/learner1.pth')
-            torch.save(self.learner2.state_dict(), f'{self.log_dir}/learner2.pth')
-            torch.save(self.optimizer1.state_dict(), f'{self.log_dir}/optimizer1.pth')
-            torch.save(self.optimizer2.state_dict(), f'{self.log_dir}/optimizer2.pth')
-            if data_collector is not None and not self.config['lr_finder']:
-                data_collector.save_data_collector()
+    def save_state(self):
+        torch.save(self.learner1.state_dict(), f'{self.log_dir}/learner1.pth')
+        torch.save(self.learner2.state_dict(), f'{self.log_dir}/learner2.pth')
+        torch.save(self.optimizer1.state_dict(), f'{self.log_dir}/optimizer1.pth')
+        torch.save(self.optimizer2.state_dict(), f'{self.log_dir}/optimizer2.pth')
 
 
     def load_weights(self):
@@ -91,12 +87,12 @@ class Learner:
         p1 = policy1.gather(dim=2, index=a)
         p2 = policy2.gather(dim=2, index=a)
 
-        a1 = a1.gather(dim=2, index=a).add_(torch.sum(policy1.detach() * a1, dim=2).unsqueeze(2))
-        a2 = a2.gather(dim=2, index=a).add_(torch.sum(policy2.detach() * a2, dim=2).unsqueeze(2))
+        a1 = a1.gather(dim=2, index=a).add_(-torch.sum(policy1.detach() * a1, dim=2).unsqueeze(2))
+        a2 = a2.gather(dim=2, index=a).add_(-torch.sum(policy2.detach() * a2, dim=2).unsqueeze(2))
         q1 = a1 + v1.detach()
         q2 = a2 + v2.detach()
-        a1_.add_(torch.sum(policy_ * a1_, dim=2).unsqueeze(2))
-        a2_.add_(torch.sum(policy_ * a2_, dim=2).unsqueeze(2))
+        a1_.add_(-torch.sum(policy_ * a1_, dim=2).unsqueeze(2))
+        a2_.add_(-torch.sum(policy_ * a2_, dim=2).unsqueeze(2))
         q1_ = a1_ + v1_
         q2_ = a2_ + v2_
         q1_m = torch.sum(policy1.detach() * q1_, dim=2).unsqueeze(2)
@@ -108,23 +104,29 @@ class Learner:
     
 
     def scale_value1(self, x):
-        x_log = np.log(np.abs(x) + 1) * self.config['reward_scaling_1']
+        x = x * self.config['reward_scaling_x']
+        x_log = np.log(np.abs(x) + 1)
         x = np.where(np.sign(x) > 0, x_log * 2, x_log * -1)
+        x = x * self.config['reward_scaling_y1']
         return x
 
     def scale_value2(self, x):
-        x = (np.sign(x) * ((np.abs(x) + 1.)**(1/2) - 1.) + 0.001 * x) * self.config['reward_scaling_2']
+        x = x * self.config['reward_scaling_x']
+        x = (np.sign(x) * ((np.abs(x) + 1.)**(1/2) - 1.) + 0.001 * x)
+        x = x * self.config['reward_scaling_y2']
         return x
 
     def invert_scale1(self, h):
-        h = h / self.config['reward_scaling_1']
+        h = h / self.config['reward_scaling_y1']
         h_ = np.where(np.sign(h) > 0, np.abs(h) / 2, np.abs(h))
         h_ = np.sign(h) * (np.exp(h_) - 1)
+        h_ = h_ / self.config['reward_scaling_x']
         return h_
 
     def invert_scale2(self, h):
-        h = h / self.config['reward_scaling_2']
+        h = h / self.config['reward_scaling_y2']
         h = np.sign(h) * ((((1 + 4*0.001*(np.abs(h) + 1 + 0.001))**(1/2) - 1) / (2*0.001))**2 - 1)
+        h = h / self.config['reward_scaling_x']
         return h
     
 
@@ -142,8 +144,7 @@ class Learner:
         p = p.detach().cpu().numpy()
         c = np.minimum(p / batch['a_p'], self.config['c_clip']).squeeze()
         
-        c = np.lib.stride_tricks.sliding_window_view(c[:, :-2], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze()
-        c = np.transpose(c, (1, 0, 2)).copy()
+        c = np.lib.stride_tricks.sliding_window_view(c[:, :-2], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2)).copy()
         c[:,:,0] = 1
         c = np.cumprod(c, axis=2)
         gamma = self.config['discount'] * np.ones((self.config['batch_size'], self.config['sequence_length'], self.config['bootstrap_length']))
@@ -192,8 +193,7 @@ class Learner:
         rho_t = np.minimum(p / batch['a_p'], self.config['rho_clip']).squeeze()
 
         rho = np.lib.stride_tricks.sliding_window_view(rho_t[:, :-1], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
-        c = np.lib.stride_tricks.sliding_window_view(c[:, :-1], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze()
-        c = np.transpose(c, (1, 0, 2)).copy()
+        c = np.lib.stride_tricks.sliding_window_view(c[:, :-1], (self.config['batch_size'], self.config['bootstrap_length'])).squeeze().transpose((1, 0, 2))
         c = np.roll(c, shift=1, axis=2)
         c[:,:,0] = 1
         c = np.cumprod(c, axis=2)
@@ -275,7 +275,6 @@ class Learner:
             self.scheduler1.step()
             self.scheduler2.step()
         self.update_count += 1
-        self.save_weights_and_data_collector(data_collector)
         self.update_target_weights()
         return loss1, loss2, gradient_norm1, gradient_norm2, learning_rate
 

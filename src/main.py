@@ -20,14 +20,16 @@ env_name = 'LaserHockey-v0'
 # if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten
 # if you want to run multiple parameters, put them in a list
 train_parameters = {
-                    # "load_run": 'S5,6,256,256,16,rng27,d8000',
-                    "jax_seed": 27,
-                    # "jax_seed": [27, 42, 69, 420, 1337, 2070],
-                    # "train_frames": 20000000,
+                    "load_run": 'S5,rng27,bs32,d1000,y1:0.9,y2:1.8,x:0.6,pt3.0,v1.0,q10.0,p10.0',
+                    # "jax_seed": 27,
+                    # "jax_seed": [42, 69, 420, 1337, 2070],
+                    "train_frames": 60000000,
                     # "per_buffer_size": 100000,
                     # "per_min_frames": 10000,
-                    # "architecture": 'dense_jax',
+                    # "batch_size": 32,
+                    # "update_frequency": 2,
                     # "observation_length": 1,
+                    # "architecture": 'dense',
                     # "metrics": False,
                     # "bandits": False,
                     # "lr_finder": True,
@@ -56,20 +58,22 @@ run_name_dict = {
     #         "blocks": '',
     #         }},
     "jax_seed": 'rng',
-    "num_envs": 'n',
-    "batch_size": 'bs',
     # "observation_length": 'o',
-    # "sequence_length": 's',
+    "batch_size": 'bs',
+    # "bootstrap_length": 'b',
     "d_target": 'd',
-    "bootstrap_length": 'b',
-    # "discount": 'g',
+    "discount": 'g',
     # "learning_rate": 'lr',
     # "weight_decay": 'w',
-    # "reward_scaling_1": 'r1:',
-    # "reward_scaling_2": 'r2:',
-    # "v_loss_scaling": 'v',
-    # "q_loss_scaling": 'q',
-    # "p_loss_scaling": 'p',
+    "reward_scaling_y1": 'y1:',
+    "reward_scaling_y2": 'y2:',
+    "reward_scaling_x": 'x:',
+    # "vt_scaling": 'vt',
+    # "rt_scaling": 'rt',
+    "pt_scaling": 'pt',
+    "v_loss_scaling": 'v',
+    "q_loss_scaling": 'q',
+    "p_loss_scaling": 'p',
     # "bandit_params": {
     #     "width_": 'w',
     #     "size": 's',
@@ -104,7 +108,7 @@ for i, combination in enumerate(param_combinations):
 
         training.run(environments, data_collector, metric, bandits, learner, actor)
     except Exception as e:
-        training.save_everything(training.played_frames, learner, bandits, data_collector)
+        training.save_everything(learner, bandits, data_collector)
         environments.close()
         metric.close_writer()
         traceback.print_exc()

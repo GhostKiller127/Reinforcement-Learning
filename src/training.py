@@ -12,9 +12,7 @@ class Training:
         self.config = self.get_config(self.env_name, train_parameters)
         self.log_dir = self.get_log_dir(self.config, self.env_name, run_name_dict)
         self.hyperparams_file = f'{self.log_dir}/hyperparameters.json'
-        self.played_frames = self.config['played_frames']
-        self.train_frames = self.config['train_frames']
-        self.num_envs = self.config['num_envs']
+        self.num_envs = self.config['train_envs'] + self.config['val_envs']
         np.random.seed(self.config['jax_seed'])
 
 
@@ -38,8 +36,8 @@ class Training:
             return config
         if config['lr_finder']:
             config['train_frames'] = (config['per_min_frames'] / config['sample_reuse'] +
-                                    config['num_envs'] * (config['sequence_length'] + config['bootstrap_length']) +
-                                    config['warmup_steps'] * config['update_frequency'] * config['num_envs'])
+                                    (config['train_envs'] + config['val_envs']) * (config['sequence_length'] + config['bootstrap_length']) +
+                                    config['warmup_steps'] * config['update_frequency'] * (config['train_envs'] + config['val_envs']))
         return config
 
 
@@ -69,12 +67,11 @@ class Training:
         return log_dir
     
 
-    def save_everything(self, played_frames, learner, bandits, data_collector, training=False):
+    def save_everything(self, learner, bandits, data_collector, training=False):
         if (not training or (learner.update_count + 1) % self.config['d_push'] == 0) and not self.config['lr_finder']:
             learner.save_state()
             data_collector.save_data_collector()
             bandits.save_bandits()
-            self.config['played_frames'] = played_frames
             with open(self.hyperparams_file, 'w') as file:
                 json.dump(self.config, file)
     
@@ -101,7 +98,7 @@ class Training:
         mean_saving = 0
         mean_sum = 0
         
-        while self.played_frames < self.train_frames:
+        while self.config['played_frames'] < self.config['train_frames']:
 
             start = dt()
             observations = next_observations.copy()
@@ -130,18 +127,18 @@ class Training:
             losses, targets = learner.check_and_update(data_collector)
             learner_t = dt() - before_learner
 
-            self.played_frames += self.num_envs
+            self.config['played_frames'] += self.num_envs
             before_metric = dt()
-            metric.add_train_return(train_returns, self.played_frames)
-            metric.add_val_return(val_returns, val_envs, self.played_frames)
-            metric.add_index_data(index_data, self.played_frames)
-            metric.add_targets(targets, self.played_frames)
-            metric.add_losses(losses, self.played_frames)
+            metric.add_train_return(train_returns, self.config['played_frames'])
+            metric.add_val_return(val_returns, val_envs, self.config['played_frames'])
+            metric.add_index_data(index_data, self.config['played_frames'])
+            metric.add_targets(targets, self.config['played_frames'])
+            metric.add_losses(losses, self.config['played_frames'])
             metric_t = dt() - before_metric
-            print(f"Frames: {self.played_frames}/{self.train_frames}", end='\r')
+            print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}", end='\r')
 
             before_saving = dt()
-            self.save_everything(self.played_frames, learner, bandits, data_collector, training=True)
+            self.save_everything(learner, bandits, data_collector, training=True)
             saving = dt() - before_saving
 
 
@@ -175,7 +172,7 @@ class Training:
             mean_saving = self.update_mean(mean_saving, saving, mean_steps)
             mean_sum = self.update_mean(mean_sum, sum, mean_steps)
 
-            print(f"Frames: {self.played_frames}/{self.train_frames}")
+            print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}")
             print(f"Type:\tSec\tMean\tPerc\tMean")
             print(f"Step:\t{run_step:.4f}\t{mean_run:.4f}\t{run_step/mean_run:.4f}\t{mean_run/mean_run:.4f}")
             print(f"Bandit:\t{bandit:.4f}\t{mean_bandit:.4f}\t{bandit/run_step:.4f}\t{mean_bandit/mean_run:.4f}")
@@ -188,12 +185,11 @@ class Training:
             print(f"Saving:\t{saving:.4f}\t{mean_saving:.4f}\t{saving/run_step:.4f}\t{mean_saving/mean_run:.4f}")
             print(f"Sum:\t{sum:.4f}\t{mean_sum:.4f}\t{sum/run_step:.4f}\t{mean_sum/mean_run:.4f}")
 
-
-        self.save_everything(self.played_frames, learner, bandits, data_collector)
+        self.save_everything(learner, bandits, data_collector)
         environments.close()
         metric.close_writer()
 
-        print(f"Frames: {self.played_frames}/{self.train_frames}")
+        print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}")
         print(f"Type:\tSec\tMean\tPerc\tMean")
         print(f"Step:\t{run_step:.4f}\t{mean_run:.4f}\t{run_step/mean_run:.4f}\t{mean_run/mean_run:.4f}")
         print(f"Bandit:\t{bandit:.4f}\t{mean_bandit:.4f}\t{bandit/run_step:.4f}\t{mean_bandit/mean_run:.4f}")

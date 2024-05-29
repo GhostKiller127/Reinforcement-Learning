@@ -31,7 +31,7 @@ class Bandits:
         self.d = self.bandit_params['d']
         self.max_size = max(self.bandit_params['acc']) * max(self.bandit_params['acc2']) + 1
 
-        for env in range(self.config['num_envs'] - self.config['val_envs']):
+        for env in range(self.config['train_envs']):
             for _ in range(self.bandit_params['num_bandits']):
                 for i, param in enumerate(['tau1', 'tau2', 'epsilon']):
                     mode = np.random.binomial(1, 0.5)
@@ -106,9 +106,9 @@ class Bandits:
         train_indeces = np.array(train_indeces)
         train_indeces[:, 0:2] = np.log(1 + train_indeces[:, 0:2])
 
-        xs = np.zeros((self.config['num_envs'] - self.config['val_envs'], self.bandit_params['num_bandits'], 3))
-        gs = np.zeros((self.config['num_envs'] - self.config['val_envs'], self.bandit_params['num_bandits'], 3))
-        bools = np.zeros((self.config['num_envs'] - self.config['val_envs'], self.bandit_params['num_bandits'], 3))
+        xs = np.zeros((self.config['train_envs'], self.bandit_params['num_bandits'], 3))
+        gs = np.zeros((self.config['train_envs'], self.bandit_params['num_bandits'], 3))
+        bools = np.zeros((self.config['train_envs'], self.bandit_params['num_bandits'], 3))
 
         xs[np.array(train_envs), ...] = np.array(train_indeces)[:, None, :]
         gs[np.array(train_envs), ...] = np.array(train_returns)[:, None, None]
@@ -130,8 +130,8 @@ class Bandits:
 
     def sample_all_candidates(self, train_envs=None):
         all_candidates = self.get_all_candidates()
-        all_candidates = all_candidates.reshape((self.config['num_envs'] - self.config['val_envs'], self.bandit_params['num_bandits'], 3, self.d))
-        sample_rngs = jax.random.split(self.main_rng, num=((self.config['num_envs'] - self.config['val_envs']), 3))
+        all_candidates = all_candidates.reshape((self.config['train_envs'], self.bandit_params['num_bandits'], 3, self.d))
+        sample_rngs = jax.random.split(self.main_rng, num=((self.config['train_envs']), 3))
         self.main_rng, _ = jax.random.split(self.main_rng)
         all_candidates = sample_candidates_vmap(sample_rngs, all_candidates)
         if train_envs is not None:
@@ -153,8 +153,7 @@ class Bandits:
         max_tau1, max_tau2, max_epsilon = get_max_indeces_vmap(sample_rngs,
                                                                self.search_spaces,
                                                                self.ws,
-                                                               self.config['num_envs'],
-                                                               self.config['val_envs'],
+                                                               self.config['train_envs'],
                                                                self.bandit_params['num_bandits'])
         if only_index:
             return max_tau1, max_tau2, max_epsilon
@@ -247,14 +246,14 @@ def sample_candidates_(sample_rng, candidates):
     return sampled_candidates.squeeze()
 
 
-@functools.partial(jax.jit, static_argnums=(3, 4, 5))
-def get_max_indeces_vmap(sample_rngs, search_spaces, ws, num_envs, val_envs, num_bandits):
-    search_spaces = search_spaces.reshape((num_envs - val_envs, num_bandits, 3, -1))
+@functools.partial(jax.jit, static_argnums=(3, 4))
+def get_max_indeces_vmap(sample_rngs, search_spaces, ws, train_envs, num_bandits):
+    search_spaces = search_spaces.reshape((train_envs, num_bandits, 3, -1))
     search_spaces = search_spaces.transpose(2, 0, 1, 3)
-    search_spaces = search_spaces.reshape(3, (num_envs - val_envs) * num_bandits, -1)
-    ws = ws.reshape((num_envs - val_envs, num_bandits, 3, -1))
+    search_spaces = search_spaces.reshape(3, (train_envs) * num_bandits, -1)
+    ws = ws.reshape((train_envs, num_bandits, 3, -1))
     ws = ws.transpose(2, 0, 1, 3)
-    ws = ws.reshape(3, (num_envs - val_envs) * num_bandits, -1)
+    ws = ws.reshape(3, (train_envs) * num_bandits, -1)
     max_indeces = jax.vmap(get_max_indeces_)(sample_rngs, search_spaces, ws)
     max_indeces = max_indeces.at[0:2].set(jnp.exp(max_indeces[0:2]) - 1)
     return max_indeces
