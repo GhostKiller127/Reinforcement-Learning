@@ -1,7 +1,7 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium.vector import SyncVectorEnv
-import laser_hockey_env as lh
+from laser_hockey_env import LaserHockeyEnv, BasicOpponent
 
 
 class Environments:
@@ -12,23 +12,22 @@ class Environments:
         self.render_mode = render_mode
         np.random.seed(self.config['jax_seed'])
         self.envs = self.get_environments()
-        self.basic = lh.BasicOpponent()
+        self.basic = BasicOpponent()
         self.action_space = self.get_action_space()
 
 
     def get_environments(self):
         if self.training:
             if self.env_name == 'LaserHockey-v0':
-                seed = np.random.randint(1e10)
-                train_envs = [lambda: lh.LaserHockeyEnv(mode_='train', seed=seed) for _ in range(self.config['train_envs'])]
-                val_envs = [lambda: lh.LaserHockeyEnv(mode_='val', seed=seed) for _ in range(self.config['val_envs'])]
+                train_envs = [lambda: LaserHockeyEnv(mode_='train', seed=np.random.randint(1e9)) for _ in range(self.config['train_envs'])]
+                val_envs = [lambda: LaserHockeyEnv(mode_='val', seed=np.random.randint(1e9)) for _ in range(self.config['val_envs'])]
                 envs = train_envs + val_envs
             else:
                 envs = [lambda: gym.make(self.env_name) for _ in range(self.config['train_envs'] + self.config['val_envs'])]
             envs = SyncVectorEnv(envs)
         else:
             if self.env_name == 'LaserHockey-v0':
-                envs = lh.LaserHockeyEnv(mode_='val')
+                envs = LaserHockeyEnv(mode_='val')
             else:
                 envs = gym.make(self.env_name, render_mode=self.render_mode)
         return envs
@@ -47,14 +46,15 @@ class Environments:
         return self.observations, infos
 
 
-    def step(self, actions):
-        observations, rewards, terminated, truncated, infos = self.envs.step(actions)
+    def step(self, actions, infos):
+        converted_actions = self.convert_actions(actions, infos)
+        observations, rewards, terminated, truncated, new_infos = self.envs.step(converted_actions)
         if self.config['observation_length'] > 1:
             self.observations[:, :-1, :] = self.observations[:, 1:, :]
         self.observations[:, -1, :] = observations
         if self.env_name == 'LaserHockey-v0' and self.render_mode == 'human':
             self.envs.render()
-        return self.observations, rewards, terminated, truncated, infos
+        return self.observations, rewards, terminated, truncated, new_infos
 
 
     def render(self):
@@ -65,15 +65,19 @@ class Environments:
         return self.envs.close()
 
 
-    def convert_actions(self, actions, infos, training=True):
+    def convert_actions(self, actions, infos):
         if self.env_name == 'LaserHockey-v0':
-            obs_agent2s = infos['obs_agent_two']
-            if not training:
-                obs_agent2s = np.expand_dims(obs_agent2s, axis=0)
-            basic_actions = [self.basic.act(obs_agent2) for obs_agent2 in obs_agent2s]
+            if np.isscalar(infos['obs_agent_two'][0]):
+                obs_agent2s = infos['obs_agent_two'][np.newaxis, :]
+            else:
+                obs_agent2s = np.vstack(infos['obs_agent_two'])
+            basic_actions = self.basic.act(obs_agent2s)
             converted_actions = self.action_space[actions]
             total_actions = np.hstack([converted_actions, basic_actions])
-            return total_actions
+            if self.render_mode == 'human':
+                return total_actions[0]
+            else:
+                return total_actions
         else:
             return actions
         

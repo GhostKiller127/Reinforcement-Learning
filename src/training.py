@@ -106,11 +106,8 @@ class Training:
             actor.pull_weights(learner)
             actions, action_probs = actor.get_actions(observations, indeces, training=True)
             actor_t = dt() - before_actor
-            before_conv_a = dt()
-            converted_actions = environments.convert_actions(actions, infos)
-            conv_a = dt() - before_conv_a
             before_env = dt()
-            next_observations, rewards, terminated, truncated, infos = environments.step(converted_actions)
+            next_observations, rewards, terminated, truncated, infos = environments.step(actions, infos)
             env = dt() - before_env
 
             before_dc = dt()
@@ -144,7 +141,7 @@ class Training:
 
             end = dt()
             run_step = end - start
-            sum = np.sum([bandit, env, dc, metric_t, actor_t, learner_t, conv_a, saving])
+            sum = np.sum([bandit, env, dc, metric_t, actor_t, learner_t, saving])
 
             if not training_started and learner.update_count >= 5:
                 training_started = True
@@ -156,7 +153,6 @@ class Training:
                 mean_metric = 0
                 mean_actor = 0
                 mean_learner = 0
-                mean_conv_a = 0
                 mean_saving = 0
                 mean_sum = 0
             
@@ -168,36 +164,35 @@ class Training:
             mean_metric = self.update_mean(mean_metric, metric_t, mean_steps)
             mean_actor = self.update_mean(mean_actor, actor_t, mean_steps)
             mean_learner = self.update_mean(mean_learner, learner_t, mean_steps)
-            mean_conv_a = self.update_mean(mean_conv_a, conv_a, mean_steps)
             mean_saving = self.update_mean(mean_saving, saving, mean_steps)
             mean_sum = self.update_mean(mean_sum, sum, mean_steps)
 
             print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}")
             print(f"Type:\tSec\tMean\tPerc\tMean")
-            print(f"Step:\t{run_step:.4f}\t{mean_run:.4f}\t{run_step/mean_run:.4f}\t{mean_run/mean_run:.4f}")
-            print(f"Bandit:\t{bandit:.4f}\t{mean_bandit:.4f}\t{bandit/run_step:.4f}\t{mean_bandit/mean_run:.4f}")
-            print(f"Env:\t{env:.4f}\t{mean_env:.4f}\t{env/run_step:.4f}\t{mean_env/mean_run:.4f}")
-            print(f"DC:\t{dc:.4f}\t{mean_dc:.4f}\t{dc/run_step:.4f}\t{mean_dc/mean_run:.4f}")
-            print(f"Metric:\t{metric_t:.4f}\t{mean_metric:.4f}\t{metric_t/run_step:.4f}\t{mean_metric/mean_run:.4f}")
-            print(f"Actor:\t{actor_t:.4f}\t{mean_actor:.4f}\t{actor_t/run_step:.4f}\t{mean_actor/mean_run:.4f}")
-            print(f"Learn:\t{learner_t:.4f}\t{mean_learner:.4f}\t{learner_t/run_step:.4f}\t{mean_learner/mean_run:.4f}")
-            print(f"Conv_a:\t{conv_a:.4f}\t{mean_conv_a:.4f}\t{conv_a/run_step:.4f}\t{mean_conv_a/mean_run:.4f}")
-            print(f"Saving:\t{saving:.4f}\t{mean_saving:.4f}\t{saving/run_step:.4f}\t{mean_saving/mean_run:.4f}")
             print(f"Sum:\t{sum:.4f}\t{mean_sum:.4f}\t{sum/run_step:.4f}\t{mean_sum/mean_run:.4f}")
+            print(f"Env:\t{env:.4f}\t{mean_env:.4f}\t{env/run_step:.4f}\t{mean_env/mean_run:.4f}")
+            print(f"Learn:\t{learner_t:.4f}\t{mean_learner:.4f}\t{learner_t/run_step:.4f}\t{mean_learner/mean_run:.4f}")
+            print(f"Actor:\t{actor_t:.4f}\t{mean_actor:.4f}\t{actor_t/run_step:.4f}\t{mean_actor/mean_run:.4f}")
+            print(f"Bandit:\t{bandit:.4f}\t{mean_bandit:.4f}\t{bandit/run_step:.4f}\t{mean_bandit/mean_run:.4f}")
+            print(f"Metric:\t{metric_t:.4f}\t{mean_metric:.4f}\t{metric_t/run_step:.4f}\t{mean_metric/mean_run:.4f}")
+            print(f"Saving:\t{saving:.4f}\t{mean_saving:.4f}\t{saving/run_step:.4f}\t{mean_saving/mean_run:.4f}")
+            print(f"DC:\t{dc:.4f}\t{mean_dc:.4f}\t{dc/run_step:.4f}\t{mean_dc/mean_run:.4f}")
 
         self.save_everything(learner, bandits, data_collector)
         environments.close()
+        before_upload = dt()
         metric.close_writer()
+        upload = dt() - before_upload
+        upload_time = datetime.timedelta(seconds=upload)
 
         print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}")
         print(f"Type:\tSec\tMean\tPerc\tMean")
-        print(f"Step:\t{run_step:.4f}\t{mean_run:.4f}\t{run_step/mean_run:.4f}\t{mean_run/mean_run:.4f}")
-        print(f"Bandit:\t{bandit:.4f}\t{mean_bandit:.4f}\t{bandit/run_step:.4f}\t{mean_bandit/mean_run:.4f}")
-        print(f"Env:\t{env:.4f}\t{mean_env:.4f}\t{env/run_step:.4f}\t{mean_env/mean_run:.4f}")
-        print(f"DC:\t{dc:.4f}\t{mean_dc:.4f}\t{dc/run_step:.4f}\t{mean_dc/mean_run:.4f}")
-        print(f"Metric:\t{metric_t:.4f}\t{mean_metric:.4f}\t{metric_t/run_step:.4f}\t{mean_metric/mean_run:.4f}")
-        print(f"Actor:\t{actor_t:.4f}\t{mean_actor:.4f}\t{actor_t/run_step:.4f}\t{mean_actor/mean_run:.4f}")
-        print(f"Learn:\t{learner_t:.4f}\t{mean_learner:.4f}\t{learner_t/run_step:.4f}\t{mean_learner/mean_run:.4f}")
-        print(f"Conv_a:\t{conv_a:.4f}\t{mean_conv_a:.4f}\t{conv_a/run_step:.4f}\t{mean_conv_a/mean_run:.4f}")
-        print(f"Saving:\t{saving:.4f}\t{mean_saving:.4f}\t{saving/run_step:.4f}\t{mean_saving/mean_run:.4f}")
         print(f"Sum:\t{sum:.4f}\t{mean_sum:.4f}\t{sum/run_step:.4f}\t{mean_sum/mean_run:.4f}")
+        print(f"Env:\t{env:.4f}\t{mean_env:.4f}\t{env/run_step:.4f}\t{mean_env/mean_run:.4f}")
+        print(f"Learn:\t{learner_t:.4f}\t{mean_learner:.4f}\t{learner_t/run_step:.4f}\t{mean_learner/mean_run:.4f}")
+        print(f"Actor:\t{actor_t:.4f}\t{mean_actor:.4f}\t{actor_t/run_step:.4f}\t{mean_actor/mean_run:.4f}")
+        print(f"Bandit:\t{bandit:.4f}\t{mean_bandit:.4f}\t{bandit/run_step:.4f}\t{mean_bandit/mean_run:.4f}")
+        print(f"Metric:\t{metric_t:.4f}\t{mean_metric:.4f}\t{metric_t/run_step:.4f}\t{mean_metric/mean_run:.4f}")
+        print(f"Saving:\t{saving:.4f}\t{mean_saving:.4f}\t{saving/run_step:.4f}\t{mean_saving/mean_run:.4f}")
+        print(f"DC:\t{dc:.4f}\t{mean_dc:.4f}\t{dc/run_step:.4f}\t{mean_dc/mean_run:.4f}")
+        print(f"Upload:\t{str(upload_time)}")

@@ -1,27 +1,17 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
-
-import sys, math
 import numpy as np
-import matplotlib.pyplot as plt
+import jax
+import jax.numpy as jnp
+import functools
 
 import Box2D
-from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
+from Box2D.b2 import (circleShape, fixtureDef, polygonShape, contactListener)
 
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.utils import seeding, EzPickle
 
-import pyglet
-from pyglet import gl
 from pyglet.window import key
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-RECORDING = True
-# RECORDING = False
 
 FPS = 60
 SCALE = 30.0  # affects how fast-paced the game is, forces should be adjusted as well (Don't touch)
@@ -37,10 +27,6 @@ RACKETPOLY = [(-5,20),(+5,20),(+5,-20),(-5,-20),(-13,-10),(-15,0),(-13,10)]
 
 FORCEMULIPLAYER = 5000
 TORQUEMULTIPLAYER = 200
-
-scaling = [ 1.0,  1.0 , 3.14, 4.0, 4.0, 2.0,  
-            1.0,  1.0,  3.14, 4.0, 4.0, 2.0,  
-            2.0, 2.0, 10.0, 10.0]
 
 
 def dist_positions(p1,p2):
@@ -629,48 +615,35 @@ class LaserHockeyEnv(gym.Env, EzPickle):
 
 class BasicOpponent():
     def __init__(self):
-        self.mode = 0
-     
-    def obs_unnorm(self, obs):
-        obs_unnorm = np.copy(obs)
-        obs_unnorm[0] *= 7.5
-        obs_unnorm[1] *= 5
-        obs_unnorm[2] *= np.pi
-        obs_unnorm[3] *= 10
-        obs_unnorm[4] *= 10
-        obs_unnorm[5] *= 15
-        obs_unnorm[6] *= 7.5
-        obs_unnorm[7] *= 5
-        obs_unnorm[8] *= np.pi
-        obs_unnorm[9] *= 10
-        obs_unnorm[10] *= 10
-        obs_unnorm[11] *= 15
-        obs_unnorm[12] *= 7.5
-        obs_unnorm[13] *= 5
-        obs_unnorm[14] *= 20
-        obs_unnorm[15] *= 20
-        return obs_unnorm         
-                
-    def act(self, obs, verbose=False, descrete=True, rnd=False):
-        if len(obs) != 16:
-            actions = []
-            for o in obs:
-                actions.append(self.act(o, verbose, descrete, rnd))
+        self.scales = jnp.array([7.5, 5, jnp.pi, 10, 10, 15, 7.5, 5, jnp.pi, 10, 10, 15, 7.5, 5, 20, 20])
+
+    def act(self, obs, verbose=False, descrete=False, rnd=False):
+        if obs.ndim == 1:
+            # return self.act_(obs, verbose, descrete, rnd)
+            return act_single(obs, self.scales, verbose, descrete, rnd)
+        else:
+            # actions = []
+            # for o in obs:
+            #     action = self.act_(o, verbose, descrete, rnd)
+            #     actions.append(action)
+            # return actions
+            actions = act_vmap(obs, self.scales, verbose, descrete, rnd)
             return actions
+    
+    def act_(self, obs, verbose, descrete, rnd):
         if rnd == True:
             action = np.random.uniform(-1, 1, 3)
             action = np.where(action >= 0.25, 1, action)
             action = np.where(action <= -0.25, -1, action)
             action = np.where(np.logical_and(action > -0.25, action < 0.25), 0, action)
             return action
-        obs = self.obs_unnorm(obs)
+        obs *= self.scales
         p1 = np.asarray(obs[0:3])
         v1 = np.asarray(obs[3:6])
         p2 = np.asarray(obs[6:9])
         v2 = np.asarray(obs[9:12])
         puck = np.asarray(obs[12:14])
         puckv = np.asarray(obs[14:16])
-        # print(p1,v1,puck,puckv)
         target_pos = p1[0:2]
         target_angle = p1[2]
 
@@ -711,6 +684,56 @@ class BasicOpponent():
             action = np.where(action <= -0.5, -1, action)
             action = np.where(np.logical_and(-0.5 < action, action < 0.5), 0, action)
         return action
+
+
+@functools.partial(jax.jit, static_argnums=(2, 3, 4))
+def act_vmap(obs, scales, verbose, descrete, rnd):
+    return jax.vmap(act_single, in_axes=(0, None, None, None, None))(obs, scales, verbose, descrete, rnd)
+
+
+@functools.partial(jax.jit, static_argnums=(2, 3, 4))
+def act_single(obs, scales, verbose, descrete, rnd):
+    obs *= scales
+    p1 = obs[0:3]
+    v1 = obs[3:6]
+    puck = obs[12:14]
+    puckv = obs[14:16]
+    target_pos = p1[0:2]
+    target_angle = p1[2]
+
+    time_to_break = 0.1
+    kp = 10
+    kd = 0.5
+
+    def true_fn():
+        dist = jnp.sqrt(jnp.sum((p1[0:2] - puck) ** 2))
+        target_pos, target_angle = jax.lax.cond(
+            (p1[0] < puck[0]) & (jnp.abs(p1[1] - puck[1]) < 1.0),
+            lambda _: ([puck[0] + 0.2, puck[1] + puckv[1] * dist * 0.1], 0.),
+            lambda _: ([-7., puck[1]], 0.),
+            operand=None
+        )
+        return target_pos, target_angle
+
+    def false_fn():
+        return [-7., 0.], 0.
+
+    target_pos, target_angle = jax.lax.cond(puckv[0] < 1.0, true_fn, false_fn)
+
+
+    target = jnp.asarray([target_pos[0], target_pos[1], target_angle])
+    error = target - p1
+    need_break = jnp.abs((error / (v1 + 0.01))) < jnp.array([time_to_break, time_to_break, time_to_break * 10])
+
+    action = error * jnp.array([kp, kp, kp / 2]) - v1 * need_break * jnp.array([kd, kd, kd])
+    action = jnp.array(action)
+    action = jnp.where(action >= 1, 1, action)
+    action = jnp.where(action <= -1, -1, action)
+    if descrete:
+        action = jnp.where(action >= 0.5, 1, action)
+        action = jnp.where(action <= -0.5, -1, action)
+        action = jnp.where(jnp.logical_and(-0.5 < action, action < 0.5), 0, action)
+    return action
 
 
 
@@ -766,11 +789,3 @@ class HumanOpponent():
         return [self.a_left * -1 + self.a_right * 1, # player x
                 self.a_down * -1 + self.a_up * 1, # player y
                 self.a_clockwise * -1 + self.a_anticlockwise * 1] # player angle
-
-    
-from gymnasium.envs.registration import register
-
-register(
-    id='LaserHockey-v0',
-    entry_point='laser_hockey_env.laser_hockey_env:LaserHockeyEnv',
-)

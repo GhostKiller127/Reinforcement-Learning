@@ -6,9 +6,8 @@ additional capabilities
     gymnasium play and show
     crypto environment
         add profit state to each kline
-evaluation
-    targets mean and std
 optimizations
+    jax laserhockey
     correct target scaling
     correct seeding
     initialize optimizer only for learner, copy only parameters
@@ -17,6 +16,5 @@ optimizations
     jax everything
 terminal messages
     Segmentation fault
-    probabilities containing NaN
 next commit
-    message: added better reward scaling & target metrics
+    message: jaxed laserhockey BasicOpponent
