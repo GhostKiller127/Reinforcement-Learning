@@ -5,7 +5,7 @@ from flax.training import train_state
 import functools
 import orbax.checkpoint as ocp
 import optax
-from architectures_jax import DenseModelJax
+from architectures_jax import DenseModelJax, TransformerModelJax
 from s5 import S5
 
 
@@ -19,6 +19,8 @@ class Actor:
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense_jax':
             self.architecture = DenseModelJax(self.architecture_parameters)
+        elif self.config['architecture'] == 'transformer':
+            self.architecture = TransformerModelJax(self.architecture_parameters)
         elif self.config['architecture'] == 'S5':
             self.architecture = S5(self.architecture_parameters).s5
         self.actor1_params = self.initialize_parameters()
@@ -37,7 +39,14 @@ class Actor:
 
 
     def pull_weights(self, learner=None, training=True):
-        if self.count % self.config['d_pull'] == 0:
+        if self.config['actor_target_network']:
+            if training:
+                self.actor1 = self.actor1.replace(params=learner.target1.params)
+                self.actor2 = self.actor2.replace(params=learner.target2.params)
+            else:
+                self.actor1 = self.checkpointer.restore(f'{self.log_dir}/learner1', item=self.actor1)
+                self.actor2 = self.checkpointer.restore(f'{self.log_dir}/learner2', item=self.actor2)
+        elif self.count % self.config['d_pull'] == 0:
             if training:
                 self.actor1 = self.actor1.replace(params=learner.learner1.params)
                 self.actor2 = self.actor2.replace(params=learner.learner2.params)
@@ -70,8 +79,8 @@ class Actor:
 def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim, train_envs, val_envs, stochastic, random_, training):
     v1, a1 = actor1.apply_fn({'params': actor1.params}, observations, False)
     v2, a2 = actor2.apply_fn({'params': actor2.params}, observations, False)
-    v1, a1 = v1[:, -1], a1[:, -1, :]
-    v2, a2 = v2[:, -1], a2[:, -1, :]
+    a1 = a1[:, -1]
+    a2 = a2[:, -1]
 
     tau1 = indices[:, 0:1]
     tau2 = indices[:, 1:2]

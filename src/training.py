@@ -94,7 +94,6 @@ class Training:
         mean_metric = 0
         mean_actor = 0
         mean_learner = 0
-        mean_conv_a = 0
         mean_saving = 0
         mean_sum = 0
         
@@ -124,13 +123,13 @@ class Training:
             losses, targets = learner.check_and_update(data_collector)
             learner_t = dt() - before_learner
 
-            self.config['played_frames'] += self.num_envs
+            self.config['played_frames'] += self.config['train_envs']
             before_metric = dt()
-            metric.add_train_return(train_returns, self.config['played_frames'])
-            metric.add_val_return(val_returns, val_envs, self.config['played_frames'])
-            metric.add_index_data(index_data, self.config['played_frames'])
-            metric.add_targets(targets, self.config['played_frames'])
-            metric.add_losses(losses, self.config['played_frames'])
+            metric.add_train_return(train_returns, self.config['played_frames'], self.config['train_envs'])
+            metric.add_val_return(val_returns, val_envs, self.config['played_frames'], self.config['train_envs'])
+            metric.add_index_data(index_data, self.config['played_frames'], self.config['train_envs'])
+            metric.add_targets(learner, targets, self.config['played_frames'])
+            metric.add_losses(learner, losses, self.config['played_frames'])
             metric_t = dt() - before_metric
             print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}", end='\r')
 

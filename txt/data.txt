@@ -1,21 +1,26 @@
 time:
-bandit
-    cartpole:    x.xx% (n256,b16)
-    lunarlander: 3.00% (n256,b16)
-    laserhockey: x.xx% (n256,b16)
 environment
     cartpole:    xx.xx% (n256,b16)
     lunarlander: 32.00% (n256,b16)
-    laserhockey: xx.xx% (n256,b16)
-metric
-    cartpole:    x.xx% (n256,b16)
-    lunarlander: 5.00% (n256,b16)
-    cartpole:    x.xx% (n256,b16)
-actor
-    cartpole:    xx.xx% (n256,b16)
-    lunarlander: 15.30% (n256,b16)
-    laserhockey: xx.xx% (n256,b16)
+    laserhockey: 60.96% (n256,b256)
 learner
     cartpole:    xx.xx% (n256,b16)
     lunarlander: 43.00% (n256,b16)
-    laserhockey: xx.xx% (n256,b16)
+    laserhockey: 22.18% (n256,b256)
+actor
+    cartpole:    xx.xx% (n256,b16)
+    lunarlander: 15.30% (n256,b16)
+    laserhockey: 11.49% (n256,b256)
+bandit
+    cartpole:    x.xx% (n256,b16)
+    lunarlander: 3.00% (n256,b16)
+    laserhockey: 2.28% (n256,b256)
+metric
+    cartpole:    x.xx% (n256,b16)
+    lunarlander: 5.00% (n256,b16)
+    laserhockey: 0.38% (n256,b256)
+saving
+    cartpole:    x.xx% (n256,b16)
+    lunarlander: x.xx% (n256,b16)
+    laserhockey: 2.34% (n256,b256)
+

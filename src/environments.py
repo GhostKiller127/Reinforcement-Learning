@@ -49,9 +49,20 @@ class Environments:
     def step(self, actions, infos):
         converted_actions = self.convert_actions(actions, infos)
         observations, rewards, terminated, truncated, new_infos = self.envs.step(converted_actions)
+        if observations.ndim == 1:
+            observations = observations[np.newaxis, :]
+        
+        reset_mask = np.atleast_1d(terminated) | np.atleast_1d(truncated)
+        if reset_mask.any():
+            reset_observations = observations[reset_mask]
+            if reset_observations.ndim == 1:
+                reset_observations = reset_observations[np.newaxis, :]
+            self.observations[reset_mask] = np.tile(reset_observations[:, np.newaxis, :], (1, self.config['observation_length'], 1))
+        
         if self.config['observation_length'] > 1:
-            self.observations[:, :-1, :] = self.observations[:, 1:, :]
-        self.observations[:, -1, :] = observations
+            self.observations[~reset_mask, :-1, :] = self.observations[~reset_mask, 1:, :]
+        self.observations[~reset_mask, -1, :] = observations[~reset_mask]
+        
         if self.env_name == 'LaserHockey-v0' and self.render_mode == 'human':
             self.envs.render()
         return self.observations, rewards, terminated, truncated, new_infos

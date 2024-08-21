@@ -1,12 +1,7 @@
-sequential observations
-    learner
-        targets use longer input length then trained loss
-        episode boundaries are crossed for loss and actor
 additional capabilities
     gymnasium play and show
-    crypto environment
-        add profit state to each kline
 optimizations
+    cosine annealing
     jax laserhockey
     correct target scaling
     correct seeding
@@ -14,7 +9,10 @@ optimizations
     ram usage
     float32
     jax everything
-terminal messages
-    Segmentation fault
 next commit
-    message: jaxed laserhockey BasicOpponent
+    message: 
+        corrected seq_obs handling
+        added ema target network
+        added weights resetting
+        added transformer
+        now logging less

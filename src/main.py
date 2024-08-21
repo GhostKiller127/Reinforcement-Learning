@@ -14,22 +14,23 @@ from training import Training
 
 
 # env_name = 'CartPole-v1'
-# env_name = 'LunarLander-v2'
-env_name = 'LaserHockey-v0'
+env_name = 'LunarLander-v2'
+# env_name = 'LaserHockey-v0'
+# env_name = 'Crypto-v0'
 
 # if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten
 # if you want to run multiple parameters, put them in a list
 train_parameters = {
-                    "load_run": 'S5,rng27,bs32,d1000,y1:0.9,y2:1.8,x:0.6,pt3.0,v1.0,q10.0,p10.0',
-                    # "jax_seed": 27,
+                    # "load_run": 'dense,rng27,bs64,s10,b10,e0.995,g0.99,lr0.0001,y10.6,y21.2,x0.6,v1.0,q5.0,p5.0',
+                    "jax_seed": 27,
                     # "jax_seed": [42, 69, 420, 1337, 2070],
-                    "train_frames": 60000000,
+                    # "train_frames": 5000000,
                     # "per_buffer_size": 100000,
                     # "per_min_frames": 10000,
-                    # "batch_size": 32,
+                    # "batch_size": 64,
                     # "update_frequency": 2,
-                    # "observation_length": 1,
-                    # "architecture": 'dense',
+                    # "observation_length": 4,
+                    # "architecture": 'dense_jax',
                     # "metrics": False,
                     # "bandits": False,
                     # "lr_finder": True,
@@ -58,19 +59,21 @@ run_name_dict = {
     #         "blocks": '',
     #         }},
     "jax_seed": 'rng',
-    # "observation_length": 'o',
     "batch_size": 'bs',
-    # "bootstrap_length": 'b',
-    "d_target": 'd',
+    # "reset_interval": 'ri',
+    # "reset_percentage": 'rp',
+    # "replay_ratio": 'rr',
+    # "observation_length": 'o',
+    "sequence_length": 's',
+    "bootstrap_length": 'b',
+    "ema_coefficient": 'e',
+    # "d_target": 'd',
     "discount": 'g',
     # "learning_rate": 'lr',
     # "weight_decay": 'w',
     "reward_scaling_y1": 'y1:',
     "reward_scaling_y2": 'y2:',
     "reward_scaling_x": 'x:',
-    # "vt_scaling": 'vt',
-    # "rt_scaling": 'rt',
-    "pt_scaling": 'pt',
     "v_loss_scaling": 'v',
     "q_loss_scaling": 'q',
     "p_loss_scaling": 'p',

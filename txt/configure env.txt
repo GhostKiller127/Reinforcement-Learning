@@ -32,8 +32,9 @@ conda install swig
 pip install "gymnasium[box2d]"
 pip install pyglet==1.2.4
 
-conda activate openai_gym
-jupyter notebook
+pip install gymnasium
+pip install gymnasium[classic-control]
+pip install gymnasium[box2d]
 
 conda env openai_gym > environment.yml
 

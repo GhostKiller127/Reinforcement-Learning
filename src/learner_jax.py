@@ -7,7 +7,7 @@ from flax.training import train_state, orbax_utils
 import orbax.checkpoint as ocp
 import optax
 import functools
-from architectures_jax import DenseModelJax
+from architectures_jax import DenseModelJax, TransformerModelJax
 from s5 import S5
 
 
@@ -23,6 +23,8 @@ class Learner:
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         if self.config['architecture'] == 'dense_jax':
             self.architecture = DenseModelJax(self.architecture_parameters)
+        elif self.config['architecture'] == 'transformer':
+            self.architecture = TransformerModelJax(self.architecture_parameters)
         elif self.config['architecture'] == 'S5':
             self.architecture = S5(self.architecture_parameters).s5
         self.learner1_params = self.initialize_parameters()
@@ -74,9 +76,33 @@ class Learner:
 
 
     def update_target_weights(self):
-        if self.update_count % self.config['d_target'] == 0:
+        if self.config['ema_target_network']:            
+            self.target1 = self.target1.replace(params=jax.tree_map(
+                lambda t, l: self.config['ema_coefficient'] * t + (1 - self.config['ema_coefficient']) * l,
+                self.target1.params,
+                self.learner1.params))
+            self.target2 = self.target2.replace(params=jax.tree_map(
+                lambda t, l: self.config['ema_coefficient'] * t + (1 - self.config['ema_coefficient']) * l,
+                self.target2.params,
+                self.learner2.params))
+        elif self.update_count % self.config['d_target'] == 0:
             self.target1 = self.target1.replace(params=self.learner1.params)
             self.target2 = self.target2.replace(params=self.learner2.params)
+    
+
+    def reset_learner_weights(self):
+        if self.config['periodic_weight_resetting']:
+            if self.update_count % self.config['reset_interval'] == 0:
+                new_params1 = self.initialize_parameters()
+                new_params2 = self.initialize_parameters()
+                self.learner1 = self.learner1.replace(params=jax.tree_map(
+                    lambda l, n: (1 - self.config['reset_percentage']) * l + self.config['reset_percentage'] * n,
+                    self.learner1.params,
+                    new_params1))
+                self.learner2 = self.learner2.replace(params=jax.tree_map(
+                    lambda l, n: (1 - self.config['reset_percentage']) * l + self.config['reset_percentage'] * n,
+                    self.learner2.params,
+                    new_params2))
     
 
     def initialize_parameters(self):
@@ -90,7 +116,8 @@ class Learner:
     def create_learner(self, learning_rate_fn, parameters):
         tx = optax.adamw(learning_rate_fn, weight_decay=self.config['weight_decay'])
         return train_state.TrainState.create(apply_fn=self.architecture.apply, params=parameters, tx=tx)
-    
+
+#region train_batch_
 
     def train_batch(self, batch):
         self.main_rng, drop_rng = random.split(self.main_rng)
@@ -105,34 +132,31 @@ class Learner:
                                                                                                         self.config['sequence_length'],
                                                                                                         self.config['discount'],
                                                                                                         self.learning_rate_fn,
-                                                                                                        self.config['vt_scaling'],
-                                                                                                        self.config['rt_scaling'],
-                                                                                                        self.config['pt_scaling'],
                                                                                                         self.config['v_loss_scaling'],
                                                                                                         self.config['q_loss_scaling'],
                                                                                                         self.config['p_loss_scaling'])
-        
         self.update_count += 1
-        self.update_target_weights()
+        self.reset_learner_weights()
         return loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2
 
 
     def check_and_update(self, data_collector):
         losses = None
         if self.step_count % self.config['update_frequency'] == 0 and data_collector.frame_count >= self.config['per_min_frames']:
-            batched_sequences, sequence_indeces = data_collector.load_batched_sequences()
-            loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = self.train_batch(batched_sequences)
+            for _ in range(self.config['replay_ratio']):
+                batched_sequences, sequence_indeces = data_collector.load_batched_sequences()
+                loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = self.train_batch(batched_sequences)
+                data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
             losses = tuple(jax.device_get(loss) for loss in losses)
             targets = rt1, rt2, vt1, vt2, pt1, pt2
             targets = tuple(jax.device_get(target) for target in targets)
-            data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
+            self.update_target_weights()
         self.step_count += 1
         if losses is None:
             return None, None
         else:
             return losses, targets
-
 
 
 @functools.partial(jax.jit, static_argnums=(1,2))
@@ -183,6 +207,8 @@ def moving_window(matrix, window_shape):
 
     return jax.vmap(lambda start: jax.lax.dynamic_slice(matrix, (start[0], start[1]), (window_height, window_width)))(starts_xy)
 
+#endregion
+#region calculate_values_
 
 @jax.jit
 def calculate_values_(drop_rng,
@@ -194,10 +220,29 @@ def calculate_values_(drop_rng,
                       target2,
                       batch):
     
-    v1, a1 = learner1.apply_fn({'params': params1}, batch['o'], True, rngs={"dropout": drop_rng})
-    v2, a2 = learner2.apply_fn({'params': params2}, batch['o'], True, rngs={"dropout": drop_rng})
-    v1_, a1_ = target1.apply_fn({'params': target1.params}, batch['o'], False)
-    v2_, a2_ = target2.apply_fn({'params': target2.params}, batch['o'], False)
+    # Reshape input
+    original_shape = batch['o'].shape
+    reshaped_o = batch['o'].reshape(-1, original_shape[2], original_shape[3])
+
+    v1, a1 = learner1.apply_fn({'params': params1}, reshaped_o, True, rngs={"dropout": drop_rng})
+    v2, a2 = learner2.apply_fn({'params': params2}, reshaped_o, True, rngs={"dropout": drop_rng})
+    v1_, a1_ = target1.apply_fn({'params': target1.params}, reshaped_o, False)
+    v2_, a2_ = target2.apply_fn({'params': target2.params}, reshaped_o, False)
+
+    v1 = v1.reshape(original_shape[0], original_shape[1], -1)
+    v2 = v2.reshape(original_shape[0], original_shape[1], -1)
+    v1_ = v1_.reshape(original_shape[0], original_shape[1], -1)
+    v2_ = v2_.reshape(original_shape[0], original_shape[1], -1)
+    
+    a1 = a1.reshape(original_shape[0], original_shape[1], -1, a1.shape[-1])
+    a2 = a2.reshape(original_shape[0], original_shape[1], -1, a2.shape[-1])
+    a1_ = a1_.reshape(original_shape[0], original_shape[1], -1, a1_.shape[-1])
+    a2_ = a2_.reshape(original_shape[0], original_shape[1], -1, a2_.shape[-1])
+
+    v1, a1 = v1[:, :, -1:], a1[:, :, -1]
+    v2, a2 = v2[:, :, -1:], a2[:, :, -1]
+    v1_, a1_ = v1_[:, :, -1:], a1_[:, :, -1]
+    v2_, a2_ = v2_[:, :, -1:], a2_[:, :, -1]
     
     i = jnp.array(batch['i'], dtype=jnp.float32)
     a = jnp.expand_dims(jnp.array(batch['a'], dtype=jnp.int32), axis=2)
@@ -229,6 +274,8 @@ def calculate_values_(drop_rng,
     
     return v1, v2, q1, q2, p1, p2, v1_, v2_, q1_, q2_, q1_m, q2_m
 
+#endregion
+#region retrace_targets_
 
 @functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14, 15, 16))
 def calculate_retrace_targets_(q1,
@@ -246,8 +293,7 @@ def calculate_retrace_targets_(q1,
                                batch_size,
                                bootstrap_length,
                                sequence_length,
-                               discount,
-                               rt_scaling):
+                               discount):
     
     q1 = jax.lax.stop_gradient(q1).squeeze()
     q2 = jax.lax.stop_gradient(q2).squeeze()
@@ -296,6 +342,9 @@ def calculate_retrace_targets_(q1,
     
     return rt1, rt2, rtd1, rtd2
 
+#endregion
+#region vtrace_targets_
+
 
 @functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14))
 def calculate_vtrace_targets_(v1_,
@@ -310,9 +359,7 @@ def calculate_vtrace_targets_(v1_,
                               batch_size,
                               bootstrap_length,
                               sequence_length,
-                              discount,
-                              vt_scaling,
-                              pt_scaling):
+                              discount):
     
     v1_ = invert_scale1(v1_.squeeze(), reward_scaling_x, reward_scaling_y1)
     v2_ = invert_scale2(v2_.squeeze(), reward_scaling_x, reward_scaling_y2)
@@ -359,8 +406,8 @@ def calculate_vtrace_targets_(v1_,
 
     vt1 = scale_value1(vt1, reward_scaling_x, reward_scaling_y1)
     vt2 = scale_value2(vt2, reward_scaling_x, reward_scaling_y2)
-    pt1 = scale_value1(pt1 * pt_scaling, reward_scaling_x, reward_scaling_y1)
-    pt2 = scale_value2(pt2 * pt_scaling, reward_scaling_x, reward_scaling_y2)
+    pt1 = scale_value1(pt1, reward_scaling_x, reward_scaling_y1)
+    pt2 = scale_value2(pt2, reward_scaling_x, reward_scaling_y2)
 
     vt1 = jnp.expand_dims(vt1[:,:-1], axis=2)
     vt2 = jnp.expand_dims(vt2[:,:-1], axis=2)
@@ -368,6 +415,7 @@ def calculate_vtrace_targets_(v1_,
     pt2 = jnp.expand_dims(pt2, axis=2)
 
     return vt1, vt2, pt1, pt2
+
 
 
 @functools.partial(jax.jit, static_argnums=(12, 13, 14, 15))
@@ -393,6 +441,8 @@ def calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
 
     return loss, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2
 
+#endregion
+#region train_batch_
 
 @functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22))
 def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
@@ -406,9 +456,6 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                                 sequence_length,
                                                                 discount,
                                                                 learning_rate_fn,
-                                                                vt_scaling,
-                                                                rt_scaling,
-                                                                pt_scaling,
                                                                 v_loss_scaling,
                                                                 q_loss_scaling,
                                                                 p_loss_scaling):
@@ -438,8 +485,7 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                           batch_size,
                                                           bootstrap_length,
                                                           sequence_length,
-                                                          discount,
-                                                          rt_scaling)
+                                                          discount)
         
         vt1, vt2, pt1, pt2 = calculate_vtrace_targets_(v1_,
                                                         v2_,
@@ -453,9 +499,7 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                         batch_size,
                                                         bootstrap_length,
                                                         sequence_length,
-                                                        discount,
-                                                        vt_scaling,
-                                                        pt_scaling)
+                                                        discount)
         
         loss, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2 = calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
                                                                                                                                     sequence_length,
@@ -480,3 +524,5 @@ def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
     grad_norm1, grad_norm2 = jnp.linalg.norm(grad_norm1), jnp.linalg.norm(grad_norm2)
 
     return learner1, learner2, loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2
+
+#endregion

@@ -30,13 +30,13 @@ class DataCollector:
     def initialize_sequence_data(self):
         return {key: np.zeros((self.num_envs, self.sequence_length, *shape), dtype=np.float32)
                 for key, shape in zip(['o', 'a', 'a_p', 'i', 'r', 'd', 't'],
-                                      [(self.architecture_parameters['input_dim'],), (), (1,), (3,), (), (), ()])}
+                                      [(self.config['observation_length'], self.architecture_parameters['input_dim']), (), (1,), (3,), (), (), ()])}
 
 
     def initialize_all_data(self):
         return {key: np.zeros((self.max_sequences, self.sequence_length, *shape), dtype=np.float32)
                 for key, shape in zip(['o', 'a', 'a_p', 'i', 'r', 'd', 't'],
-                                      [(self.architecture_parameters['input_dim'],), (), (1,), (3,), (), (), ()])}
+                                      [(self.config['observation_length'], self.architecture_parameters['input_dim']), (), (1,), (3,), (), (), ()])}
 
 
     def save_data_collector(self):
@@ -71,7 +71,8 @@ class DataCollector:
 
     def add_data(self, **kwargs):
         for key, value in kwargs.items():
-            self.sequence_data[key][:, self.step_count] = value[:, -1, :] if key == 'o' else value
+            # self.sequence_data[key][:, self.step_count] = value[:, -1, :] if key == 'o' else value
+            self.sequence_data[key][:, self.step_count] = value
         self.step_count += 1
         if self.step_count == self.sequence_length:
             self.add_sequential_data()
