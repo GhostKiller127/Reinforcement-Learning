@@ -13,10 +13,12 @@ class Metric:
         if self.config['metrics']:
             self.initialize_wandb(i)
         self.writer = SummaryWriter(log_dir=self.log_dir, max_queue=1e10, flush_secs=30)
-    
+        self.train_return_counter = 0
+        self.val_stochastic_counter = 0
+        self.val_greedy_counter = 0
+        self.index_data_counter = 0
 
     def initialize_wandb(self, i):
-        # wandb.require("core")
         self.run_name = '/'.join(self.log_dir.split('/')[-1:])
         if self.config['load_run'] is None:
             self.config['wandb_id'] = wandb.util.generate_id()
@@ -28,46 +30,56 @@ class Metric:
                    resume='allow',
                    dir='../',
                    config=self.config)
-        # os.remove('../wandb/debug.log')
-        # os.remove('../wandb/debug-internal.log')
+        os.remove('../wandb/debug.log')
+        os.remove('../wandb/debug-internal.log')
     
 
-    def should_log(self, step_count, scale):
-        log_interval = max(1, math.ceil(step_count / scale))
-        return step_count % log_interval == 0
+    def should_log(self, counter):
+        log_interval = math.ceil(counter / 2000)
+        return counter % log_interval == 0
 
     
-    def add_train_return(self, train_returns, played_frames, num_envs):
-        if train_returns.size != 0 and self.config['metrics'] and self.should_log(played_frames / num_envs, 2000):
-            self.writer.add_scalar('_return/train', np.mean(train_returns), global_step=played_frames)
+    def add_train_return(self, train_returns, played_frames):
+        if train_returns.size != 0 and self.config['metrics']:
+            self.train_return_counter += 1
+            if self.should_log(self.train_return_counter):
+                self.writer.add_scalar('_return/train', np.mean(train_returns), global_step=played_frames)
 
     
-    def add_val_return(self, val_returns, val_envs, played_frames, num_envs):
-        if self.config['metrics'] and self.should_log(played_frames / num_envs, 20000):
+    def add_val_return(self, val_returns, val_envs, played_frames):
+        if self.config['metrics']:
             stochastic_returns = [val_returns[i] for i, env in enumerate(val_envs) if env < (self.config['train_envs'] + self.config['val_envs'] // 2)]
             greedy_returns = [val_returns[i] for i, env in enumerate(val_envs) if env >= (self.config['train_envs'] + self.config['val_envs'] // 2)]
+            
             if stochastic_returns:
-                self.writer.add_scalar('_return/val_stochastic', np.mean(stochastic_returns), global_step=played_frames)
+                self.val_stochastic_counter += 1
+                if self.should_log(self.val_stochastic_counter):
+                    self.writer.add_scalar('_return/val_stochastic', np.mean(stochastic_returns), global_step=played_frames)
+            
             if greedy_returns:
-                self.writer.add_scalar('_return/val_greedy', np.mean(greedy_returns), global_step=played_frames)
+                self.val_greedy_counter += 1
+                if self.should_log(self.val_greedy_counter):
+                    self.writer.add_scalar('_return/val_greedy', np.mean(greedy_returns), global_step=played_frames)
 
     
-    def add_index_data(self, index_data, played_frames, num_envs):
-        if index_data is not None and self.config['metrics'] and self.should_log(played_frames / num_envs, 2000):
-            tau1, tau2, epsilon, n1, n2, n3, w1, w2, w3 = index_data
-            # self.writer.add_histogram('bandit index count/tau1', n1, global_step=played_frames)
-            # self.writer.add_histogram('bandit index count/tau2', n2, global_step=played_frames)
-            # self.writer.add_histogram('bandit index count/epsilon', n3, global_step=played_frames)
-            # self.writer.add_histogram('bandit index weight/tau1', w1, global_step=played_frames)
-            # self.writer.add_histogram('bandit index weight/tau2', w2, global_step=played_frames)
-            # self.writer.add_histogram('bandit index weight/epsilon', w3, global_step=played_frames)
-            self.writer.add_scalar('bandit/max_tau1', tau1, global_step=played_frames)
-            self.writer.add_scalar('bandit/max_tau2', tau2, global_step=played_frames)
-            self.writer.add_scalar('bandit/max_epsilon', epsilon, global_step=played_frames)
+    def add_index_data(self, index_data, played_frames):
+        if index_data is not None and self.config['metrics']:
+            self.index_data_counter += 1
+            if self.should_log(self.index_data_counter):
+                tau1, tau2, epsilon, n1, n2, n3, w1, w2, w3 = index_data
+                self.writer.add_scalar('bandit/max_tau1', tau1, global_step=played_frames)
+                self.writer.add_scalar('bandit/max_tau2', tau2, global_step=played_frames)
+                self.writer.add_scalar('bandit/max_epsilon', epsilon, global_step=played_frames)
+                # self.writer.add_histogram('bandit index count/tau1', n1, global_step=played_frames)
+                # self.writer.add_histogram('bandit index count/tau2', n2, global_step=played_frames)
+                # self.writer.add_histogram('bandit index count/epsilon', n3, global_step=played_frames)
+                # self.writer.add_histogram('bandit index weight/tau1', w1, global_step=played_frames)
+                # self.writer.add_histogram('bandit index weight/tau2', w2, global_step=played_frames)
+                # self.writer.add_histogram('bandit index weight/epsilon', w3, global_step=played_frames)
 
 
     def add_targets(self, learner, targets, played_frames):
-        if targets is not None and self.config['metrics'] and self.should_log(learner.step_count, 420):
+        if targets is not None and self.config['metrics'] and self.should_log(learner.step_count):
             rt1, rt2, vt1, vt2, pt1, pt2 = targets
             # self.writer.add_histogram('retrace targets/rt1', rt1, global_step=played_frames, bins=30)
             # self.writer.add_histogram('retrace targets/rt2', rt2, global_step=played_frames, bins=30)
@@ -90,7 +102,7 @@ class Metric:
 
 
     def add_losses(self, learner, losses, played_frames):
-        if losses is not None and self.config['metrics'] and self.should_log(learner.step_count, 420):
+        if losses is not None and self.config['metrics'] and self.should_log(learner.step_count):
             l1, l2, v_l1, v_l2, q_l1, q_l2, p_l1, p_l2, norm1, norm2, lr = losses
             self.writer.add_scalar('loss/loss1', l1, global_step=played_frames)
             self.writer.add_scalar('loss/loss2', l2, global_step=played_frames)

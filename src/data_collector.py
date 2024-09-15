@@ -4,6 +4,7 @@ import numpy as np
 
 class DataCollector:
     def __init__(self, training_class):
+        self.env_name = training_class.env_name
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/data_collector.npz'
         np.random.seed(self.config['jax_seed'])
@@ -28,29 +29,42 @@ class DataCollector:
 
 
     def initialize_sequence_data(self):
-        return {key: np.zeros((self.num_envs, self.sequence_length, *shape), dtype=np.float32)
-                for key, shape in zip(['o', 'a', 'a_p', 'i', 'r', 'd', 't'],
-                                      [(self.config['observation_length'], self.architecture_parameters['input_dim']), (), (1,), (3,), (), (), ()])}
-
+        data = {key: np.zeros((self.num_envs, self.sequence_length, *shape), dtype=np.float32)
+                for key, shape in zip(['a', 'a_p', 'i', 'r', 'd', 't'],
+                                      [(), (1,), (3,), (), (), ()])}
+        if not self.env_name == 'Crypto-v0':
+            data['o'] = np.zeros((self.num_envs, self.sequence_length, self.config['observation_length'], self.architecture_parameters['input_dim']), dtype=np.float32)
+        data['infos'] = np.empty((self.num_envs, self.sequence_length), dtype=object)
+        data['infos'].fill({})
+        return data
 
     def initialize_all_data(self):
-        return {key: np.zeros((self.max_sequences, self.sequence_length, *shape), dtype=np.float32)
-                for key, shape in zip(['o', 'a', 'a_p', 'i', 'r', 'd', 't'],
-                                      [(self.config['observation_length'], self.architecture_parameters['input_dim']), (), (1,), (3,), (), (), ()])}
+        data = {key: np.zeros((self.max_sequences, self.sequence_length, *shape), dtype=np.float32)
+                for key, shape in zip(['a', 'a_p', 'i', 'r', 'd', 't'],
+                                      [(), (1,), (3,), (), (), ()])}
+        if not self.env_name == 'Crypto-v0':
+            data['o'] = np.zeros((self.max_sequences, self.sequence_length, self.config['observation_length'], self.architecture_parameters['input_dim']), dtype=np.float32)
+        data['infos'] = np.empty((self.max_sequences, self.sequence_length), dtype=object)
+        data['infos'].fill({})
+        return data
 
 
     def save_data_collector(self):
+        data_to_save = {key: value for key, value in self.all_data.items() if key != 'infos'}
         np.savez(self.log_dir, priorities=self.priorities, sequence_count=self.sequence_count,
-                 frame_count=self.frame_count, **self.all_data)
+                 frame_count=self.frame_count, **data_to_save)
+        np.save(f'{self.log_dir}_infos.npy', self.all_data['infos'], allow_pickle=True)
 
 
     def load_data_collector(self):
-        data = np.load(self.log_dir)
+        data = np.load(self.log_dir, allow_pickle=True)
         self.priorities = data['priorities']
         self.sequence_count = data['sequence_count']
         self.frame_count = data['frame_count']
         for key in self.all_data.keys():
-            self.all_data[key] = data[key]
+            if key != 'infos':
+                self.all_data[key] = data[key]
+        self.all_data['infos'] = np.load(f'{self.log_dir}_infos.npy', allow_pickle=True)
 
 
     def get_max_sequences(self):
@@ -71,7 +85,8 @@ class DataCollector:
 
     def add_data(self, **kwargs):
         for key, value in kwargs.items():
-            # self.sequence_data[key][:, self.step_count] = value[:, -1, :] if key == 'o' else value
+            if self.env_name == 'Crypto-v0' and key == 'o':
+                continue
             self.sequence_data[key][:, self.step_count] = value
         self.step_count += 1
         if self.step_count == self.sequence_length:
@@ -99,13 +114,33 @@ class DataCollector:
         return train_indices, val_indices, train_returns, val_returns, terminated_train_envs, terminated_val_envs
 
 
-    def load_batched_sequences(self):
+    def load_batched_sequences(self, environments):
         probabilities = self.priorities**self.config['per_priority_exponent']
         probabilities /= np.sum(probabilities)
         sequence_indices = np.random.choice(len(self.priorities), size=self.config['batch_size'], p=probabilities, replace=False)
-        batched_sequences = {key: value[sequence_indices] for key, value in self.all_data.items()}
-        return batched_sequences, sequence_indices
+        
+        if self.env_name == 'Crypto-v0':
+            batched_sequences = {key: value[sequence_indices] for key, value in self.all_data.items()}
+            batched_sequences['o'] = self.reconstruct_crypto_observations(batched_sequences, environments)
+            del batched_sequences['infos']
+        else:
+            batched_sequences = {key: value[sequence_indices] for key, value in self.all_data.items() if key != 'infos'}
 
+        return batched_sequences, sequence_indices
+    
+
+    def reconstruct_crypto_observations(self, batched_sequences, environments):
+        observations = []
+        for i in range(len(batched_sequences['infos'])):
+            sequence_obs = []
+            for j in range(len(batched_sequences['infos'][i])):
+                info = batched_sequences['infos'][i][j]
+                klines = environments.envs.load_klines(info['symbol'], info['timestamp'])
+                observation = environments.envs.create_observation(klines, info['history'])
+                sequence_obs.append(observation)
+            observations.append(sequence_obs)
+        return np.array(observations)
+    
 
     def update_priorities(self, rtd1, rtd2, sequence_indices):
         td_max1 = np.max(np.abs(rtd1), axis=1)

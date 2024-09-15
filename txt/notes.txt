@@ -3,16 +3,9 @@ additional capabilities
 optimizations
     cosine annealing
     jax laserhockey
-    correct target scaling
-    correct seeding
     initialize optimizer only for learner, copy only parameters
     ram usage
     float32
     jax everything
 next commit
-    message: 
-        corrected seq_obs handling
-        added ema target network
-        added weights resetting
-        added transformer
-        now logging less
+    message:

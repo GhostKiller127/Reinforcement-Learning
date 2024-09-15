@@ -1,4 +1,5 @@
 import os
+import asyncio
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -37,11 +38,15 @@ class Learner:
         self.target1 = self.create_learner(self.learning_rate_fn, self.target1_params)
         self.target2 = self.create_learner(self.learning_rate_fn, self.target2_params)
         self.checkpointer = ocp.Checkpointer(ocp.PyTreeCheckpointHandler(write_tree_metadata=True))
+
+
+    async def initialize(self):
         if self.config['load_run'] is None:
             os.makedirs(self.log_dir, exist_ok=True)
         else:
-            self.load_state()
+            await self.load_states()
         self.update_target_weights()
+        return self
 
 
     def create_learning_rate_fn(self):
@@ -63,16 +68,29 @@ class Learner:
         return schedule_fn
     
 
-    def save_state(self):
-        save_args = orbax_utils.save_args_from_target(self.learner1)
-        self.checkpointer.save(os.path.abspath(f'{self.log_dir}/learner1'), self.learner1, save_args=save_args, force=True)
-        save_args = orbax_utils.save_args_from_target(self.learner2)
-        self.checkpointer.save(os.path.abspath(f'{self.log_dir}/learner2'), self.learner2, save_args=save_args, force=True)
+    async def save_states(self):
+        async def save_model(model_name, model):
+            save_args = orbax_utils.save_args_from_target(model)
+            save_func = functools.partial(self.checkpointer.save, 
+                                          os.path.abspath(f'{self.log_dir}/{model_name}'), 
+                                          model, 
+                                          save_args=save_args, 
+                                          force=True)
+            await asyncio.get_event_loop().run_in_executor(None, save_func)
+
+        models = [('learner1', self.learner1),
+                  ('learner2', self.learner2),
+                  ('target1', self.target1),
+                  ('target2', self.target2)]
+        
+        await asyncio.gather(*[save_model(name, model) for name, model in models])
 
 
-    def load_state(self):
-        self.learner1 = self.checkpointer.restore(f'{self.log_dir}/learner1', item=self.learner1)
-        self.learner2 = self.checkpointer.restore(f'{self.log_dir}/learner2', item=self.learner2)
+    async def load_states(self):
+        self.learner1 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/learner1', self.learner1)
+        self.learner2 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/learner2', self.learner2)
+        self.target1 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/target1', self.target1)
+        self.target2 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/target2', self.target2)
 
 
     def update_target_weights(self):
@@ -117,7 +135,6 @@ class Learner:
         tx = optax.adamw(learning_rate_fn, weight_decay=self.config['weight_decay'])
         return train_state.TrainState.create(apply_fn=self.architecture.apply, params=parameters, tx=tx)
 
-#region train_batch_
 
     def train_batch(self, batch):
         self.main_rng, drop_rng = random.split(self.main_rng)
@@ -139,12 +156,13 @@ class Learner:
         self.reset_learner_weights()
         return loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, grad_norm1, grad_norm2, lr, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2
 
+#region check_and_update
 
-    def check_and_update(self, data_collector):
+    def check_and_update(self, data_collector, environments):
         losses = None
         if self.step_count % self.config['update_frequency'] == 0 and data_collector.frame_count >= self.config['per_min_frames']:
             for _ in range(self.config['replay_ratio']):
-                batched_sequences, sequence_indeces = data_collector.load_batched_sequences()
+                batched_sequences, sequence_indeces = data_collector.load_batched_sequences(environments)
                 loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate, rt1, rt2, vt1, vt2, pt1, pt2, rtd1, rtd2 = self.train_batch(batched_sequences)
                 data_collector.update_priorities(rtd1, rtd2, sequence_indeces)
             losses = loss1, loss2, v_loss1, v_loss2, q_loss1, q_loss2, p_loss1, p_loss2, gradient_norm1, gradient_norm2, learning_rate
@@ -277,7 +295,7 @@ def calculate_values_(drop_rng,
 #endregion
 #region retrace_targets_
 
-@functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14, 15, 16))
+@functools.partial(jax.jit, static_argnums=(8, 9, 10, 11, 12, 13, 14, 15))
 def calculate_retrace_targets_(q1,
                                q2,
                                q1_,
@@ -346,7 +364,7 @@ def calculate_retrace_targets_(q1,
 #region vtrace_targets_
 
 
-@functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14))
+@functools.partial(jax.jit, static_argnums=(4, 5, 6, 7, 8, 9, 10, 11, 12))
 def calculate_vtrace_targets_(v1_,
                               v2_,
                               p,
@@ -444,7 +462,7 @@ def calculate_losses_(v1, v2, q1, q2, p1, p2, rt1, rt2, vt1, vt2, pt1, pt2,
 #endregion
 #region train_batch_
 
-@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22))
+@functools.partial(jax.jit, static_argnums=(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19))
 def train_batch_(drop_rng, learner1, learner2, target1, target2, batch, step,
                                                                 reward_scaling_y1,
                                                                 reward_scaling_y2,

@@ -1,3 +1,4 @@
+import asyncio
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -38,27 +39,26 @@ class Actor:
             return self.architecture.init({"params": init_rng, "dropout": drop_rng}, jnp.ones(self.architecture_parameters['input_shape']))['params']
 
 
-    def pull_weights(self, learner=None, training=True):
-        if self.config['actor_target_network']:
-            if training:
+    async def pull_weights(self, learner=None, training=True, target_eval=False):
+        if self.count % self.config['d_pull'] == 0:
+            if training and self.config['actor_target_network']:
                 self.actor1 = self.actor1.replace(params=learner.target1.params)
                 self.actor2 = self.actor2.replace(params=learner.target2.params)
-            else:
-                self.actor1 = self.checkpointer.restore(f'{self.log_dir}/learner1', item=self.actor1)
-                self.actor2 = self.checkpointer.restore(f'{self.log_dir}/learner2', item=self.actor2)
-        elif self.count % self.config['d_pull'] == 0:
-            if training:
+            elif training and not self.config['actor_target_network']:
                 self.actor1 = self.actor1.replace(params=learner.learner1.params)
                 self.actor2 = self.actor2.replace(params=learner.learner2.params)
+            elif target_eval:
+                self.actor1 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/target1', self.actor1)
+                self.actor2 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/target2', self.actor2)
             else:
-                self.actor1 = self.checkpointer.restore(f'{self.log_dir}/learner1', item=self.actor1)
-                self.actor2 = self.checkpointer.restore(f'{self.log_dir}/learner2', item=self.actor2)
+                self.actor1 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/learner1', self.actor1)
+                self.actor2 = await asyncio.get_event_loop().run_in_executor(None, self.checkpointer.restore, f'{self.log_dir}/learner2', self.actor2)
         self.count += 1
         
 
-    def get_actions(self, observations, indeces, stochastic=True, random_=False, training=False):
+    def get_actions(self, observations, indeces, stochastic=True, random_=False, training=False, return_values=False):
         self.main_rng, act_rng = jax.random.split(self.main_rng)
-        actions, action_probs = calculate_actions(act_rng,
+        actions, action_probs, q_action, v = calculate_actions(act_rng,
                                                   self.actor1,
                                                   self.actor2,
                                                   observations,
@@ -68,17 +68,25 @@ class Actor:
                                                   self.config['val_envs'],
                                                   stochastic,
                                                   random_,
-                                                  training)
+                                                  training,
+                                                  return_values)
         actions = np.array(actions)
         action_probs = np.array(action_probs)
-        return actions, action_probs
+        if return_values:
+            q_action = np.array(q_action)
+            v = np.array(v)
+            return actions, action_probs, q_action, v
+        else:
+            return actions, action_probs
 
 
 
-@functools.partial(jax.jit, static_argnums=(5, 6, 7, 8, 9, 10))
-def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim, train_envs, val_envs, stochastic, random_, training):
+@functools.partial(jax.jit, static_argnums=(5, 6, 7, 8, 9, 10, 11))
+def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim, train_envs, val_envs, stochastic, random_, training, return_values):
     v1, a1 = actor1.apply_fn({'params': actor1.params}, observations, False)
     v2, a2 = actor2.apply_fn({'params': actor2.params}, observations, False)
+    v1 = v1[:, -1]
+    v2 = v2[:, -1]
     a1 = a1[:, -1]
     a2 = a2[:, -1]
 
@@ -101,4 +109,13 @@ def calculate_actions(act_rng, actor1, actor2, observations, indices, action_dim
     if training:
         greedy_actions = jnp.argmax(policy, axis=1)
         actions = actions.at[-(val_envs // 2):].set(greedy_actions[-(val_envs // 2):])
-    return actions, action_probs
+
+    if return_values:
+        q1 = a1 + v1
+        q2 = a2 + v2
+        v = epsilon * v1 + (1 - epsilon) * v2
+        q = epsilon * q1 + (1 - epsilon) * q2
+        q_action = jnp.take_along_axis(q, actions[:, None], axis=1)
+        return actions, action_probs, q_action, v
+    else:
+        return actions, action_probs, None, None
