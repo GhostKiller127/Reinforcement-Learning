@@ -1,4 +1,5 @@
 import numpy as np
+import jax.numpy as jnp
 
 
 
@@ -8,6 +9,7 @@ class DataCollector:
         self.config = training_class.config
         self.log_dir = f'{training_class.log_dir}/data_collector.npz'
         np.random.seed(self.config['jax_seed'])
+        self.rng = np.random.default_rng(self.config['jax_seed'])
         self.architecture_parameters = self.config['parameters'][self.config['architecture']]
         self.num_envs = self.config['train_envs'] + self.config['val_envs']
         self.max_sequences = self.get_max_sequences()
@@ -78,7 +80,7 @@ class DataCollector:
             self.sequence_count = 0
         for key in self.sequence_data.keys():
             self.all_data[key][self.sequence_count:self.sequence_count + self.config['train_envs']] = self.sequence_data[key][:self.config['train_envs']]
-        self.priorities[self.sequence_count:self.sequence_count + self.config['train_envs']] = 1e3
+        self.priorities[self.sequence_count:self.sequence_count + self.config['train_envs']] = np.mean(self.priorities) + 1e-3
         self.frame_count += self.config['train_envs'] * self.config['sequence_length']
         self.sequence_count += self.config['train_envs']
 
@@ -117,7 +119,10 @@ class DataCollector:
     def load_batched_sequences(self, environments):
         probabilities = self.priorities**self.config['per_priority_exponent']
         probabilities /= np.sum(probabilities)
-        sequence_indices = np.random.choice(len(self.priorities), size=self.config['batch_size'], p=probabilities, replace=False)
+        sequence_indices = self.rng.choice(len(self.priorities), size=self.config['batch_size'], p=probabilities, replace=False)
+        importance_weights = (self.max_sequences * probabilities[sequence_indices])**-self.config['importance_sampling_exponent']
+        importance_weights /= np.max(importance_weights)
+        importance_weights = jnp.array(importance_weights)
         
         if self.env_name == 'Crypto-v0':
             batched_sequences = {key: value[sequence_indices] for key, value in self.all_data.items()}
@@ -126,7 +131,7 @@ class DataCollector:
         else:
             batched_sequences = {key: value[sequence_indices] for key, value in self.all_data.items() if key != 'infos'}
 
-        return batched_sequences, sequence_indices
+        return batched_sequences, importance_weights, sequence_indices
     
 
     def reconstruct_crypto_observations(self, batched_sequences, environments):

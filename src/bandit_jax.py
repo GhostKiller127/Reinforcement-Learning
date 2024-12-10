@@ -14,6 +14,7 @@ class Bandits:
         self.log_dir = f'{training_class.log_dir}/bandits.npz'
         self.main_rng = jax.random.PRNGKey(self.config['jax_seed'])
         np.random.seed(self.config['jax_seed'])
+        self.rng = np.random.default_rng(self.config['jax_seed'])
         if self.config['load_run'] is None:
             self.initialize_bandits()
         else:
@@ -31,6 +32,7 @@ class Bandits:
         self.d = self.bandit_params["d"]
         self.width = self.bandit_params["width_"]
         self.size = self.bandit_params["size"]
+        self.current_indices = None
 
         for mode, lr in itertools.product(self.bandit_params["mode"], self.bandit_params["lr"]):
             for param in ["tau1", "tau2", "epsilon"]:
@@ -58,7 +60,8 @@ class Bandits:
                  lrs=self.lrs,
                  ws=self.ws,
                  Ns=self.Ns,
-                 search_spaces=self.search_spaces)
+                 search_spaces=self.search_spaces,
+                 current_indices=self.current_indices)
 
 
     def load_bandits(self):
@@ -77,7 +80,10 @@ class Bandits:
         self.ws = data['ws']
         self.Ns = data['Ns']
         self.search_spaces = data['search_spaces']
-    
+        self.current_indices = data['current_indices']
+
+#endregion
+#region bandit
 
     def update_bandits(self, tau1, tau2, epsilon, g):
         x = {"tau1": tau1, "tau2": tau2, "epsilon": epsilon}
@@ -98,19 +104,22 @@ class Bandits:
 
 
     def sample_candidate(self, candidates):
-        tau1 = random.choice(candidates["tau1"])
-        tau2 = random.choice(candidates["tau2"])
-        epsilon = random.choice(candidates["epsilon"])
+        tau1 = self.rng.choice(candidates["tau1"])
+        tau2 = self.rng.choice(candidates["tau2"])
+        epsilon = self.rng.choice(candidates["epsilon"])
         return tau1, tau2, epsilon
     
 
-    def get_all_indeces(self, num_envs):
-        indeces = []
-        self.index_data = self.get_index_data()
-        self.all_candidates = self.get_candidates()
-        for _ in range(num_envs):
-            indeces.append(self.sample_candidate(self.all_candidates))
-        return np.array(indeces)
+    def get_all_indeces(self):
+        if self.config['load_run'] is None:
+            indeces = []
+            self.all_candidates = self.get_candidates()
+            for _ in range(self.config['train_envs'] + self.config['val_envs']):
+                indeces.append(self.sample_candidate(self.all_candidates))
+            self.current_indices = np.array(indeces)
+            return self.current_indices
+        else:
+            return self.current_indices
 
 
     def get_param_indeces_and_search_spaces(self):
@@ -162,7 +171,10 @@ class Bandits:
                 index_data = (np.array(x) for x in self.index_data)
                 all_candidates = self.get_candidates()
                 new_train_indeces = [self.sample_candidate(all_candidates) for _ in train_envs]
-            new_val_indeces = [self.index_data[:3] for _ in val_envs] if val_envs else None
+                self.current_indices[train_envs] = np.array(new_train_indeces)
+            if val_envs:
+                new_val_indeces = [self.index_data[:3] for _ in val_envs]
+                self.current_indices[val_envs] = np.array(new_val_indeces)
         else:
             if train_envs or val_envs:
                 all_candidates = self.get_candidates()
@@ -171,6 +183,7 @@ class Bandits:
         
         return new_train_indeces, new_val_indeces, index_data
 
+#region jit
 
 @functools.partial(jax.jit, static_argnums=())
 def get_max_indeces(s1, s2, s3, w1, w2, w3):
@@ -227,3 +240,4 @@ def sample_(sample_rng, w, N, search_space, mode, d, width):
     candidates = jax.lax.cond(mode, true_fun, false_fun)
     return candidates
 
+#endregion jit

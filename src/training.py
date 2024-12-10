@@ -1,9 +1,13 @@
 import os
 import json
+import yaml
+import asyncio
 import datetime
 import numpy as np
 from configs import configs
+from yaml import dump, Dumper
 from timeit import default_timer as dt
+
 
 
 class Training:
@@ -11,10 +15,10 @@ class Training:
         self.env_name = env_name
         self.config = self.get_config(self.env_name, train_parameters)
         self.log_dir = self.get_log_dir(self.config, self.env_name, run_name_dict)
+        self.env_configs = self.get_env_configs()
         self.hyperparams_file = f'{self.log_dir}/hyperparameters.json'
-        self.num_envs = self.config['train_envs'] + self.config['val_envs']
-        np.random.seed(self.config['jax_seed'])
 
+#region init
 
     def get_config(self, env_name, train_parameters):
         def update_config(config, train_parameters, configs):
@@ -28,7 +32,6 @@ class Training:
         config = update_config({}, train_parameters, configs[env_name])
 
         if config['load_run'] is not None:
-            # run_path = f"../runs/{env_name}/{config['load_run']}/hyperparameters.json"
             run_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../runs/{env_name}/{config['load_run']}/hyperparameters.json"))
             with open(run_path, "r") as file:
                 config = json.load(file)
@@ -38,7 +41,7 @@ class Training:
         if config['lr_finder']:
             config['train_frames'] = (config['per_min_frames'] / config['sample_reuse'] +
                                     (config['train_envs'] + config['val_envs']) * (config['sequence_length'] + config['bootstrap_length']) +
-                                    config['warmup_steps'] * config['update_frequency'] * (config['train_envs'] + config['val_envs']))
+                                    config['warmup_steps'] * 2 * config['update_frequency'] * (config['train_envs'] + config['val_envs']))
         return config
 
 
@@ -62,30 +65,44 @@ class Training:
                 run_name += ',lr'
             if run_name_dict['suffix'] != '':
                 run_name += ',' + run_name_dict['suffix']
-            log_dir = f'../runs/{env_name}/{run_name}'
+            log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../runs/{env_name}/{run_name}"))
         else:
             log_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../runs/{env_name}/{config['load_run']}"))
         return log_dir
     
+    
+    def get_env_configs(self):
+        if self.env_name == 'Crypto-v0':
+            if self.config['load_run'] is None:
+                configs_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"../../Bybit/src/configs.yaml"))
+            else:
+                configs_path = os.path.join(self.log_dir, "configs.yaml")
+            with open(configs_path, 'r') as configs_file:
+                env_configs = yaml.safe_load(configs_file)
+            return env_configs
+    
 
-    async def save_everything(self, learner, bandits, data_collector, environments, training=False):
+    async def save_everything(self, learner, bandits, data_collector, environments, metric, training=False):
         if (not training or (learner.update_count + 1) % self.config['d_push'] == 0) and not self.config['lr_finder']:
+            print('Saving...')
             await learner.save_states()
             data_collector.save_data_collector()
             bandits.save_bandits()
             environments.save_environments()
+            metric.save_state()
             with open(self.hyperparams_file, 'w') as file:
                 json.dump(self.config, file)
     
 
     def update_mean(self, old_mean, new_value, n):
         return old_mean + (new_value - old_mean) / (n + 1)
-    
+
+#endregion
 #region run
 
-    async def run(self, environments, data_collector, metric, bandits, learner, actor):
+    async def run(self, environments, data_collector, metric, bandits, learner, actor, stop):
         next_observations, next_infos = environments.reset()
-        indeces = bandits.get_all_indeces(self.num_envs)
+        indeces = bandits.get_all_indeces()
 
         training_started = False
         mean_steps = 0
@@ -100,9 +117,9 @@ class Training:
         mean_sum = 0
         
         while self.config['played_frames'] < self.config['train_frames']:
-
             start = dt()
             observations = next_observations.copy()
+            observations = environments.preprocess_observations(observations)
             infos = next_infos.copy()
             before_actor = dt()
             await actor.pull_weights(learner)
@@ -128,16 +145,18 @@ class Training:
 
             self.config['played_frames'] += self.config['train_envs']
             before_metric = dt()
+            metric.add_observations(observations, self.config['played_frames'])
+            metric.add_infos(infos, self.config['played_frames'])
             metric.add_train_return(train_returns, self.config['played_frames'])
             metric.add_val_return(val_returns, val_envs, self.config['played_frames'])
             metric.add_index_data(index_data, self.config['played_frames'])
-            metric.add_targets(learner, targets, self.config['played_frames'])
-            metric.add_losses(learner, losses, self.config['played_frames'])
+            metric.add_targets(targets, self.config['played_frames'])
+            metric.add_losses(losses, self.config['played_frames'])
             metric_t = dt() - before_metric
             print(f"Frames: {self.config['played_frames']}/{self.config['train_frames']}", end='\r')
 
             before_saving = dt()
-            await self.save_everything(learner, bandits, data_collector, environments, training=True)
+            await self.save_everything(learner, bandits, data_collector, environments, metric, training=True)
             saving = dt() - before_saving
 
 #endregion
@@ -182,7 +201,14 @@ class Training:
             print(f"Saving:\t{saving:.4f}\t{mean_saving:.4f}\t{saving/run_step:.4f}\t{mean_saving/mean_run:.4f}")
             print(f"DC:\t{dc:.4f}\t{mean_dc:.4f}\t{dc/run_step:.4f}\t{mean_dc/mean_run:.4f}")
 
-        await self.save_everything(learner, bandits, data_collector, environments)
+            await asyncio.sleep(0)
+            if stop[0]:
+                break
+
+#endregion
+#region finish
+
+        await self.save_everything(learner, bandits, data_collector, environments, metric)
         environments.close()
         before_upload = dt()
         metric.close_writer()

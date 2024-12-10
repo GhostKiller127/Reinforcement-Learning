@@ -7,7 +7,7 @@ from laser_hockey_env import LaserHockeyEnv, BasicOpponent
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from Bybit.src.crypto_env import CryptoEnv
 
-
+#region init
 
 class Environments:
     def __init__(self, training_class, training=True, render_mode='rgb_array'):
@@ -17,6 +17,7 @@ class Environments:
         self.training = training
         self.render_mode = render_mode
         np.random.seed(self.config['jax_seed'])
+        self.rng = np.random.default_rng(self.config['jax_seed'])
         self.envs = self.get_environments()
 
 
@@ -27,8 +28,8 @@ class Environments:
             elif self.env_name == 'LaserHockey-v0':
                 self.basic = BasicOpponent()
                 self.action_space = self.get_action_space()
-                train_envs = [lambda: LaserHockeyEnv(mode_='train', seed=np.random.randint(1e9)) for _ in range(self.config['train_envs'])]
-                val_envs = [lambda: LaserHockeyEnv(mode_='val', seed=np.random.randint(1e9)) for _ in range(self.config['val_envs'])]
+                train_envs = [lambda: LaserHockeyEnv(mode_='train', seed=self.rng.randint(1e9)) for _ in range(self.config['train_envs'])]
+                val_envs = [lambda: LaserHockeyEnv(mode_='val', seed=self.rng.randint(1e9)) for _ in range(self.config['val_envs'])]
                 envs = train_envs + val_envs
                 envs = SyncVectorEnv(envs)
             else:
@@ -36,7 +37,7 @@ class Environments:
                 envs = SyncVectorEnv(envs)
         else:
             if self.env_name == 'Crypto-v0':
-                envs = CryptoEnv(train_configs=self.config, train_log_dir=self.log_dir, mode='val')
+                envs = CryptoEnv(train_configs=self.config, train_log_dir=self.log_dir, mode='eval')
             elif self.env_name == 'LaserHockey-v0':
                 self.basic = BasicOpponent()
                 self.action_space = self.get_action_space()
@@ -44,13 +45,9 @@ class Environments:
             else:
                 envs = gym.make(self.env_name, render_mode=self.render_mode)
         return envs
-    
 
-    def save_environments(self):
-        if self.env_name == 'Crypto-v0':
-            self.envs.save_configs()
-            self.envs.save_env_states()
-
+#endregion
+#region main
 
     def reset(self, random=False):
         if self.env_name == 'Crypto-v0':
@@ -101,6 +98,29 @@ class Environments:
 
     def close(self):
         return self.envs.close()
+
+#endregion
+#region helper
+
+    def save_environments(self):
+        if self.env_name == 'Crypto-v0':
+            self.envs.save_configs()
+            self.envs.save_env_states()
+    
+
+    def preprocess_observations(self, observations):
+        if self.env_name == 'LunarLander-v2':
+            return self.scale_observations(observations)
+        else:
+            return observations
+    
+    
+    def scale_observations(self, x):
+        x = x * self.config['observations_scaling_x']
+        x_log = np.log(np.abs(x) + 1)
+        x = np.where(np.sign(x) > 0, x_log, -x_log)
+        x = x * self.config['observations_scaling_y']
+        return x
 
 
     def convert_actions(self, actions, infos):

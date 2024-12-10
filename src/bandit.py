@@ -48,10 +48,10 @@ class Bandit:
                 candidates_indices.extend(indices_within_epsilon)
                 if len(candidates_indices) >= self.d:
                     break
-            candidates = self.search_space[np.random.choice(candidates_indices, self.d, replace=False)]
+            candidates = self.search_space[self.rng.choice(candidates_indices, self.d, replace=False)]
         elif self.mode == 'random':
             probabilities = np.exp(scores) / np.sum(np.exp(scores))
-            candidates_indices = np.random.choice(len(scores), self.d, replace=False, p=probabilities)
+            candidates_indices = self.rng.choice(len(scores), self.d, replace=False, p=probabilities)
             candidates = self.search_space[candidates_indices]
         return candidates
 
@@ -63,6 +63,7 @@ class Bandits:
         self.bandit_params = self.config['bandit_params']
         self.log_dir = f'{training_class.log_dir}/bandits.pkl'
         np.random.seed(self.config['jax_seed'])
+        self.rng = np.random.default_rng(self.config['jax_seed'])
         if self.config['load_run'] is None:
             self.bandits = self.initialize_bandits()
         else:
@@ -116,9 +117,9 @@ class Bandits:
 
 
     def sample_candidate(self, candidates):
-        tau1 = random.choice(candidates["tau1"])
-        tau2 = random.choice(candidates["tau2"])
-        epsilon = random.choice(candidates["epsilon"])
+        tau1 = self.rng.choice(candidates["tau1"])
+        tau2 = self.rng.choice(candidates["tau2"])
+        epsilon = self.rng.choice(candidates["epsilon"])
         return tau1, tau2, epsilon
     
 

@@ -1,6 +1,13 @@
+import os
+import signal
 import asyncio
+import warnings
 import itertools
 import traceback
+from numpy import ComplexWarning
+warnings.filterwarnings("ignore", category=ComplexWarning)
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.4'
 from environments import Environments
 from data_collector import DataCollector
 from metric import Metric
@@ -13,6 +20,7 @@ from learner_jax import Learner
 from actor_jax import Actor
 from training import Training
 
+#region configs
 
 # env_name = 'CartPole-v1'
 # env_name = 'LunarLander-v2'
@@ -20,91 +28,82 @@ from training import Training
 env_name = 'Crypto-v0'
 
 # if you want to continue a run, 'load_run' and 'train_frames' need to be specified. the rest will be overwritten
-# if you want to run multiple parameters, put them in a list
-train_parameters = {
-                    "load_run": 'S5,rng27,bs64,s10,b10,e0.995,g0.99,y10.6,y21.0,x10.0,test',
-                    "jax_seed": 27,
-                    # "jax_seed": [42, 69, 420, 1337, 2070],
-                    "train_frames": 100000000,
-                    # "per_buffer_size": 100000,
-                    # "per_min_frames": 10000,
-                    "d_push": 30,
-                    # "batch_size": 64,
-                    # "update_frequency": 2,
-                    # "observation_length": 4,
-                    # "architecture": 'dense_jax',
-                    "metrics": False,
-                    # "bandits": False,
-                    # "lr_finder": True,
-                    # "parameters": {
-                    #     "S5": {
-                    #         "n_layers": 4,
-                    #         "d_model": 32,
-                    #         "ssm_size": 32,
-                    #         "blocks": 4,
-                    #         "decoder_dim": 64,
-                    #         }},
-                    # "bandit_params": {
-                    #       "d": 9,
-                    #       },
-                    }
+# Add more configuration dictionaries as needed
+configs = [
+    {
+        "train_parameters": {
+            # "load_run": 'S5,2,128,128,8,g0.98,y0.4,y0.5,x500.0,y0.4,x500.0,par,s100,f1,15min',
+            "train_frames": 100000000,
+            # "per_min_frames": 100000,
+            # "metrics": False,
+        },
+        "run_name": {
+            "prefix": 'S5',
+            "suffix": 'par,s100,f0.55,15min',
+            # "prefix": 'dense',
+            # "suffix": 'test',
+            "timestamp": False,
+            "parameters": {
+                "S5": {
+                    "n_layers": '',
+                    "d_model": '',
+                    "decoder_dim": '',
+                    "blocks": '',
+                    "dropout": 'd',
+                }},
+                # "dense_jax": {
+                #     "hidden_dim": 'd',
+                # }},
+            # "per_priority_exponent": 'p',
+            # "importance_sampling_exponent": 'i',
+            # "bootstrap_length": 'b',
+            "discount": 'g',
+            "reward_scaling_y1": 'y',
+            "reward_scaling_y2": 'y',
+            "reward_scaling_x": 'x',
+            "cumulative_reward_scaling_y": 'y',
+            "cumulative_reward_scaling_x": 'x',
+            # "v_loss_scaling": 'v',
+            # "q_loss_scaling": 'q',
+            # "p_loss_scaling": 'p',
+        }
+    },
+    # {
+    #     "train_parameters": {
+    #         "train_frames": 200000,
+    #     },
+    #     "run_name": {
+    #         "prefix": 'dense',
+    #         "suffix": 'test_2',
+    #         "timestamp": False,
+    #         "parameters": {
+    #             "dense_jax": {
+    #                 "hidden_dim": 'd',
+    #             }},
+    #         "per_priority_exponent": 'p',
+    #         "importance_sampling_exponent": 'i',
+    #         "v_loss_scaling": 'v',
+    #         "q_loss_scaling": 'q',
+    #         "p_loss_scaling": 'p',
+    #     }
+    # }
+]
 
-run_name_dict = {
-    "prefix": 'S5',
-    "suffix": 'test',
-    "timestamp": False,
-    # "parameters": {
-    #     "S5": {
-    #         "n_layers": '',
-    #         "d_model": '',
-    #         "ssm_size": '',
-    #         "blocks": '',
-    #         }},
-    "jax_seed": 'rng',
-    "batch_size": 'bs',
-    # "reset_interval": 'ri',
-    # "reset_percentage": 'rp',
-    # "replay_ratio": 'rr',
-    # "observation_length": 'o',
-    "sequence_length": 's',
-    "bootstrap_length": 'b',
-    "ema_coefficient": 'e',
-    # "d_target": 'd',
-    "discount": 'g',
-    # "learning_rate": 'lr',
-    # "weight_decay": 'w',
-    "reward_scaling_y1": 'y1:',
-    "reward_scaling_y2": 'y2:',
-    "reward_scaling_x": 'x:',
-    # "v_loss_scaling": 'v',
-    # "q_loss_scaling": 'q',
-    # "p_loss_scaling": 'p',
-    # "bandit_params": {
-    #     "width_": 'w',
-    #     "size": 's',
-        # "d": 'd',
-        # },
-    }
-
-
-def generate_combinations(param_dict):
-    if isinstance(param_dict, dict):
-        keys, values = zip(*param_dict.items())
-        for combination in itertools.product(*[generate_combinations(v) for v in values]):
-            yield dict(zip(keys, combination))
-    elif isinstance(param_dict, list):
-        for item in param_dict:
-            yield from generate_combinations(item)
-    else:
-        yield param_dict
-
+#endregion
+#region run
 
 async def run_training():
-    param_combinations = list(generate_combinations(train_parameters))
+    stop = [False]
+    def signal_handler():
+        stop[0] = True
 
-    for i, combination in enumerate(param_combinations):
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, signal_handler)
+
+    for i, config in enumerate(configs):
         try:
-            training = Training(env_name, combination, run_name_dict)
+            training = Training(env_name, config['train_parameters'], config['run_name'])
             environments = Environments(training)
             data_collector = DataCollector(training)
             metric = Metric(training, i)
@@ -112,7 +111,7 @@ async def run_training():
             learner = await Learner(training).initialize()
             actor = Actor(training)
 
-            await training.run(environments, data_collector, metric, bandits, learner, actor)
+            await training.run(environments, data_collector, metric, bandits, learner, actor, stop)
 
         except Exception as e:
             print(f"\nError occurred during training iteration {i}:")
@@ -120,12 +119,8 @@ async def run_training():
             print(f"Exception message: {str(e)}")
             print("\nTraceback:")
             traceback.print_exc()
-            
-            print("\nAttempting to save data and close resources...")
-            training.save_everything(learner, bandits, data_collector, environments)
             environments.close()
             metric.close_writer()
-            print("Cleanup completed.")
 
 
 if __name__ == "__main__":

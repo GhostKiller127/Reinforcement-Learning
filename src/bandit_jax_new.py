@@ -12,11 +12,13 @@ class Bandits:
         self.log_dir = f'{training_class.log_dir}/bandits.npz'
         self.main_rng = jax.random.PRNGKey(self.config['jax_seed'])
         np.random.seed(self.config['jax_seed'])
+        self.rng = np.random.default_rng(self.config['jax_seed'])
         if self.config['load_run'] is None:
             self.initialize_bandits()
         else:
             self.load_bandits()
 
+#region init
 
     def initialize_bandits(self):
         self.envs = []
@@ -30,20 +32,21 @@ class Bandits:
         self.params = []
         self.d = self.bandit_params['d']
         self.max_size = max(self.bandit_params['acc']) * max(self.bandit_params['acc2']) + 1
+        self.current_indices = None
 
         for env in range(self.config['train_envs']):
             for _ in range(self.bandit_params['num_bandits']):
                 for i, param in enumerate(['tau1', 'tau2', 'epsilon']):
-                    mode = np.random.binomial(1, 0.5)
-                    acc2 = np.random.choice(self.bandit_params['acc2'])
-                    lr = np.random.choice(self.bandit_params['lr'])
+                    mode = self.rng.binomial(1, 0.5)
+                    acc2 = self.rng.choice(self.bandit_params['acc2'])
+                    lr = self.rng.choice(self.bandit_params['lr'])
 
                     l, r = self.bandit_params[param]
                     if param != 'epsilon':
                         l, r = np.log(1 + l), np.log(1 + r)
                     size = self.bandit_params['acc'][i] * acc2 + 1
                     max_offset = (r - l) / (size - 1)
-                    offset = np.random.uniform(1e-6, max_offset)
+                    offset = self.rng.uniform(1e-6, max_offset)
                     pad_length = self.max_size - size
                     w = np.full(self.max_size, -np.inf)
                     w[pad_length:] = self.bandit_params['weight_init']
@@ -73,6 +76,8 @@ class Bandits:
         self.masks = jnp.array(self.masks)
         self.search_spaces = jnp.array(self.search_spaces)
 
+#endregion
+#region helper
 
     def save_bandits(self):
         np.savez(self.log_dir,
@@ -84,7 +89,8 @@ class Bandits:
                  Ns=self.Ns,
                  pad_lengths=self.pad_lengths,
                  masks=self.masks,
-                 search_spaces=self.search_spaces)
+                 search_spaces=self.search_spaces,
+                 current_indices=self.current_indices)
 
 
     def load_bandits(self):
@@ -100,7 +106,10 @@ class Bandits:
         self.search_spaces = data['search_spaces']
         self.d = self.bandit_params["d"]
         self.max_size = max(self.bandit_params['acc']) * max(self.bandit_params['acc2']) + 1
+        self.current_indices = data['current_indices']
 
+#endregion
+#region update
 
     def update_bandits(self, train_indeces, train_returns, train_envs):
         train_indeces = np.array(train_indeces)
@@ -139,12 +148,15 @@ class Bandits:
         return all_candidates
     
 
-    def get_all_indeces(self, num_envs=None):
+    def get_all_indeces(self):
         self.index_data = self.get_index_data(only_index=True)
-        all_candidates = self.sample_all_candidates()
-        val_indeces = np.array([self.index_data for _ in range(self.config['val_envs'])])
-        all_indeces = np.vstack((all_candidates, val_indeces))
-        return all_indeces
+        if self.config['load_run'] is None:
+            all_candidates = self.sample_all_candidates()
+            val_indeces = np.array([self.index_data for _ in range(self.config['val_envs'])])
+            self.current_indices = np.vstack((all_candidates, val_indeces))
+            return self.current_indices
+        else:
+            return self.current_indices
 
 
     def get_index_data(self, only_index=False):
@@ -168,9 +180,13 @@ class Bandits:
             index_data = (np.array(x) for x in self.index_data)
         if train_envs:
             new_train_indeces = np.array(self.sample_all_candidates(train_envs))
-        new_val_indeces = np.array([self.index_data[:3] for _ in val_envs]) if val_envs else None
+            self.current_indices[train_envs] = new_train_indeces
+        if val_envs:
+            new_val_indeces = np.array([self.index_data[:3] for _ in val_envs])
+            self.current_indices[val_envs] = new_val_indeces
         return new_train_indeces, new_val_indeces, index_data
 
+#region jit
 
 @jax.jit
 def update_vmap(xs, gs, ws, Ns, search_spaces, lrs, bools):
@@ -272,3 +288,5 @@ def get_elements(search_space, max_index, sample_rng):
     interval = jax.lax.dynamic_slice(search_space, (max_index,), (2,))
     sample = jax.random.uniform(sample_rng, minval=interval[0], maxval=interval[1])
     return sample
+
+#endregion

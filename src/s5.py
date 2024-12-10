@@ -12,6 +12,7 @@ from S5.s5.ssm_init import make_DPLR_HiPPO
 from S5.s5.cru.util import CRN_CNN
 
 
+
 class S5():
     def __init__(self, configs):
         self.configs = configs
@@ -30,11 +31,12 @@ class S5():
                                                     padded=False,
                                                     activation=self.configs['activation'],
                                                     dropout=self.configs['dropout'],
+                                                    mode=self.configs['mode'],
                                                     prenorm=self.configs['prenorm'],
                                                     batchnorm=self.configs['batchnorm'],
-                                                    decoder_dim=self.configs['d_model'] // 2,
-                                                    # encoder_fn=lambda d: CRN_CNN(d, input_shape=24)
-                                                    )
+                                                    bn_momentum=self.configs['bn_momentum'],
+                                                    decoder_dim=self.configs['decoder_dim'])
+
 
     def get_ssm_init_fn(self):
         block_size = int(self.configs['ssm_size'] / self.configs['blocks'])
@@ -51,17 +53,16 @@ class S5():
         Vinv = block_diag(*([Vc] * self.configs['blocks']))
 
         return init_S5SSM(H=self.configs['d_model'],
-                            P=ssm_size,
-                            Lambda_re_init=Lambda.real,
-                            Lambda_im_init=Lambda.imag,
-                            V=V,
-                            Vinv=Vinv,
-                            C_init='trunc_standard_normal',
-                            discretization="zoh",
-                            dt_min=0.001,
-                            dt_max=0.1,
-                            variable_observation_interval=False,
-                            conj_sym=True,
-                            clip_eigs=False,
-                            bidirectional=False)
-    
+                          P=ssm_size,
+                          Lambda_re_init=Lambda.real,
+                          Lambda_im_init=Lambda.imag,
+                          V=V,
+                          Vinv=Vinv,
+                          C_init='trunc_standard_normal',
+                          discretization="zoh",
+                          dt_min=0.001,
+                          dt_max=0.1,
+                          variable_observation_interval=False,
+                          conj_sym=True,
+                          clip_eigs=False,
+                          bidirectional=self.configs['bidirectional'])
